@@ -1,5 +1,18 @@
 # Changelog
 
+## [2026-06-06] — update auto-restart uses fresh code (v0.3.6)
+
+### Fixed
+- `ai-meter update` now re-invokes `ai-meter reboot` as a subprocess after pip upgrade — restart always uses the newly installed code, not stale in-memory modules from before the upgrade.
+- Integration rebuild during update also runs via the fresh CLI (`ai-meter integrate --build`).
+- Update returns a non-zero exit code if auto-restart fails, with a clear `ai-meter reboot` hint.
+
+### Verify
+```bash
+ai-meter update
+# should end with reboot success + popup_server_running: true
+```
+
 ## [2026-06-06] — reboot + popup-server fix (v0.3.5)
 
 ### Fixed

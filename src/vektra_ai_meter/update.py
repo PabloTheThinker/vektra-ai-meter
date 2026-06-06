@@ -57,25 +57,47 @@ def _pip_upgrade(app: Path, pip: Path) -> None:
     _run([str(pip), "install", "-q", "--upgrade", f"git+{repo}@{branch}"])
 
 
+def _launcher() -> Path:
+    from .autostart import ai_meter_bin
+
+    return ai_meter_bin()
+
+
 def _ensure_integration() -> None:
-    from .integrate import build_layer_shell
     from .ui.wayland import is_wayland
 
     if not is_wayland():
         return
-    ok, message = build_layer_shell()
-    if ok:
-        if "Already integrated" not in message:
-            print(message)
+
+    launcher = _launcher()
+    if not launcher.is_file():
         return
-    print(f"Warning: integrated dropdown build skipped — {message}", file=sys.stderr)
-    print("Qt panel fallback will be used until layer-shell builds successfully.", file=sys.stderr)
+
+    # Run via the freshly installed CLI so post-pip integrate logic is current.
+    result = subprocess.run(
+        [str(launcher), "integrate", "--build"],
+        check=False,
+        text=True,
+    )
+    if result.returncode != 0:
+        print(
+            "Warning: integrated dropdown build skipped — Qt panel fallback remains active.",
+            file=sys.stderr,
+        )
 
 
-def _restart_topbar() -> None:
-    from .autostart import reboot_panel
+def _restart_topbar() -> bool:
+    """Restart using the newly installed ai-meter (not in-process stale modules)."""
+    launcher = _launcher()
+    if not launcher.is_file():
+        print(
+            f"Update installed but launcher not found at {launcher}.",
+            file=sys.stderr,
+        )
+        return False
 
-    reboot_panel()
+    result = subprocess.run([str(launcher), "reboot"], check=False)
+    return result.returncode == 0
 
 
 def run_update(*, restart: bool = True) -> int:
@@ -113,7 +135,9 @@ def run_update(*, restart: bool = True) -> int:
 
     if restart:
         print("Restarting panel indicator...")
-        _restart_topbar()
-        print("Done. Check your top-bar status area.")
+        if _restart_topbar():
+            return 0
+        print("Update installed but auto-restart failed. Run: ai-meter reboot", file=sys.stderr)
+        return 1
 
     return 0
