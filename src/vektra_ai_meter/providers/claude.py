@@ -7,7 +7,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
-from ..util import home, iter_jsonl, parse_iso, unix_ts
+from ..util import cached_by_mtime, home, iter_jsonl, parse_iso, prune_cache, unix_ts
 
 MAX_CLAUDE_SCAN = 64
 
@@ -63,6 +63,50 @@ def _usage_from_message(message: dict[str, Any]) -> dict[str, int]:
     }
 
 
+@dataclass
+class _ClaudeSession:
+    input: int = 0
+    output: int = 0
+    cache_create: int = 0
+    cache_read: int = 0
+    model: str | None = None
+    title: str | None = None
+    cwd: str | None = None
+    at: datetime | None = None
+    counts: bool = False  # has usage or a title — i.e. contributes to totals
+
+
+# Per-session parse cache keyed on (mtime_ns, size). Session JSONL is append-only,
+# so an unchanged signature means an unchanged parse — skip the full re-read.
+_CLAUDE_SESSION_CACHE: dict[Path, tuple[tuple[int, int], _ClaudeSession]] = {}
+
+
+def _parse_claude_session(path: Path) -> _ClaudeSession:
+    rec = _ClaudeSession()
+    has_usage = False
+    for row in iter_jsonl(path):
+        row_type = row.get("type")
+        if row_type == "ai-title":
+            rec.title = row.get("aiTitle") or rec.title
+        if row_type == "user":
+            rec.cwd = row.get("cwd") or rec.cwd
+            rec.at = parse_iso(row.get("timestamp")) or rec.at
+        if row_type == "assistant":
+            message = row.get("message") or {}
+            usage = _usage_from_message(message)
+            if any(usage.values()):
+                has_usage = True
+                rec.input += usage["input"]
+                rec.output += usage["output"]
+                rec.cache_create += usage["cache_create"]
+                rec.cache_read += usage["cache_read"]
+            rec.model = message.get("model") or rec.model
+            rec.cwd = row.get("cwd") or rec.cwd
+            rec.at = parse_iso(row.get("timestamp")) or rec.at
+    rec.counts = has_usage or rec.title is not None
+    return rec
+
+
 def collect_claude_stats() -> ClaudeStats:
     root = home() / ".claude" / "projects"
     stats = ClaudeStats()
@@ -85,58 +129,31 @@ def collect_claude_stats() -> ClaudeStats:
         return stats
 
     paths = sorted(root.rglob("*.jsonl"), key=lambda p: p.stat().st_mtime, reverse=True)
-    for session_path in paths[:MAX_CLAUDE_SCAN]:
+    scan_paths = paths[:MAX_CLAUDE_SCAN]
+    prune_cache(_CLAUDE_SESSION_CACHE, set(scan_paths))
+    for session_path in scan_paths:
         seen_session_ids.add(session_path.stem)
-        session_input = 0
-        session_output = 0
-        session_cache_create = 0
-        session_cache_read = 0
-        session_model: str | None = None
-        session_title: str | None = None
-        session_cwd: str | None = None
-        session_at: datetime | None = None
-        has_usage = False
-
-        for row in iter_jsonl(session_path):
-            row_type = row.get("type")
-            if row_type == "ai-title":
-                session_title = row.get("aiTitle") or session_title
-            if row_type == "user":
-                session_cwd = row.get("cwd") or session_cwd
-                session_at = parse_iso(row.get("timestamp")) or session_at
-            if row_type == "assistant":
-                message = row.get("message") or {}
-                usage = _usage_from_message(message)
-                if any(usage.values()):
-                    has_usage = True
-                    session_input += usage["input"]
-                    session_output += usage["output"]
-                    session_cache_create += usage["cache_create"]
-                    session_cache_read += usage["cache_read"]
-                session_model = message.get("model") or session_model
-                session_cwd = row.get("cwd") or session_cwd
-                session_at = parse_iso(row.get("timestamp")) or session_at
-
-        if not has_usage and session_title is None:
+        rec = cached_by_mtime(_CLAUDE_SESSION_CACHE, session_path, _parse_claude_session)
+        if rec is None or not rec.counts:
             continue
 
-        session_total = session_input + session_output
+        session_total = rec.input + rec.output
         stats.sessions += 1
-        stats.input_tokens += session_input
-        stats.output_tokens += session_output
-        stats.cache_create_tokens += session_cache_create
-        stats.cache_read_tokens += session_cache_read
+        stats.input_tokens += rec.input
+        stats.output_tokens += rec.output
+        stats.cache_create_tokens += rec.cache_create
+        stats.cache_read_tokens += rec.cache_read
         stats.total_tokens += session_total
 
-        if session_at and session_at.date() == today:
+        if rec.at and rec.at.date() == today:
             stats.today_sessions += 1
             stats.today_tokens += session_total
 
-        if stats.latest_at is None or (session_at and session_at >= stats.latest_at):
-            stats.latest_at = session_at
-            stats.latest_model = session_model
-            stats.latest_title = session_title
-            stats.latest_cwd = session_cwd
+        if stats.latest_at is None or (rec.at and rec.at >= stats.latest_at):
+            stats.latest_at = rec.at
+            stats.latest_model = rec.model
+            stats.latest_title = rec.title
+            stats.latest_cwd = rec.cwd
 
     for live in live_sessions:
         session_id = str(live.get("sessionId") or "")

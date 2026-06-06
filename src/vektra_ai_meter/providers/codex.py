@@ -6,7 +6,7 @@ from pathlib import Path
 from typing import Any
 
 from ..limits import UsageLimit, context_limit, has_window_limits, parse_codex_rate_limits
-from ..util import home, iter_jsonl, parse_iso, unix_ts
+from ..util import cached_by_mtime, home, iter_jsonl, parse_iso, prune_cache, unix_ts
 
 MAX_CODEX_FULL_PARSE = 42
 
@@ -83,14 +83,90 @@ def _apply_rate_limits(stats: CodexStats, limits: dict[str, Any] | None) -> None
     )
 
 
+@dataclass
+class _CodexSession:
+    input: int = 0
+    output: int = 0
+    reasoning: int = 0
+    cached: int = 0
+    total: int = 0
+    model: str | None = None
+    cwd: str | None = None
+    title: str | None = None
+    at: datetime | None = None
+    active: bool = False
+    mtime_epoch: float = 0.0
+    # latest rate-limit window seen in this session (folded globally by max ts)
+    rate_ts: str | None = None
+    rate_limits: dict[str, Any] | None = None
+    # latest context-window candidate in this session (folded globally by max ts)
+    ctx_ts: str | None = None
+    ctx_tokens: int = 0
+    ctx_window: int | None = None
+
+
+# Per-session parse cache keyed on (mtime_ns, size). Rollout JSONL is append-only.
+_CODEX_SESSION_CACHE: dict[Path, tuple[tuple[int, int], _CodexSession]] = {}
+
+
+def _parse_codex_session(path: Path) -> _CodexSession:
+    rec = _CodexSession()
+    try:
+        rec.mtime_epoch = path.stat().st_mtime
+    except OSError:
+        rec.mtime_epoch = 0.0
+
+    for row in iter_jsonl(path):
+        row_type = row.get("type")
+        payload = row.get("payload") or {}
+
+        if row_type == "session_meta":
+            rec.title = _session_title(row) or rec.title
+            rec.cwd = payload.get("cwd") or rec.cwd
+            rec.at = parse_iso(payload.get("timestamp")) or rec.at
+
+        if row_type == "turn_context":
+            turn = payload or {}
+            rec.model = turn.get("model") or rec.model
+            rec.cwd = turn.get("cwd") or rec.cwd
+            rec.at = parse_iso(row.get("timestamp")) or rec.at
+
+        if row_type == "event_msg" and payload.get("type") == "token_count":
+            info = payload.get("info") or {}
+            usage = info.get("total_token_usage") or info.get("last_token_usage") or {}
+            rec.input = max(rec.input, int(usage.get("input_tokens") or 0))
+            rec.output = max(rec.output, int(usage.get("output_tokens") or 0))
+            rec.reasoning = max(rec.reasoning, int(usage.get("reasoning_output_tokens") or 0))
+            rec.cached = max(rec.cached, int(usage.get("cached_input_tokens") or 0))
+            rec.total = max(rec.total, int(usage.get("total_tokens") or 0))
+            rec.at = parse_iso(row.get("timestamp")) or rec.at
+
+            ts = str(row.get("timestamp") or "")
+            rec.rate_ts, rec.rate_limits = _note_rate_limits(
+                payload, ts, best_ts=rec.rate_ts, best_limits=rec.rate_limits
+            )
+
+            context_window = info.get("model_context_window")
+            if context_window and rec.total:
+                if rec.ctx_ts is None or ts > rec.ctx_ts:
+                    rec.ctx_ts = ts
+                    rec.ctx_tokens = rec.total
+                    rec.ctx_window = int(context_window)
+
+        if row_type == "event_msg" and payload.get("type") == "task_started":
+            rec.active = True
+
+    return rec
+
+
 def collect_codex_stats() -> CodexStats:
     root = home() / ".codex" / "sessions"
     stats = CodexStats()
     if not root.exists():
         return stats
 
-    today = datetime.now(timezone.utc).date()
-    seen_sessions: set[Path] = set()
+    now = datetime.now(timezone.utc)
+    today = now.date()
     today_sessions: set[Path] = set()
     latest_context_tokens = 0
     latest_context_window: int | None = None
@@ -101,91 +177,52 @@ def collect_codex_stats() -> CodexStats:
     best_rate_ts: str | None = None
     best_rate_limits: dict[str, Any] | None = None
 
-    for path in paths[:MAX_CODEX_FULL_PARSE]:
-        seen_sessions.add(path)
-        file_mtime = datetime.fromtimestamp(path.stat().st_mtime, tz=timezone.utc)
-        session_input = 0
-        session_output = 0
-        session_reasoning = 0
-        session_cached = 0
-        session_total = 0
-        session_model: str | None = None
-        session_cwd: str | None = None
-        session_title: str | None = None
-        session_at: datetime | None = None
-        session_active = False
+    scan_paths = paths[:MAX_CODEX_FULL_PARSE]
+    prune_cache(_CODEX_SESSION_CACHE, set(scan_paths))
 
-        for row in iter_jsonl(path):
-            row_type = row.get("type")
-            payload = row.get("payload") or {}
+    for path in scan_paths:
+        rec = cached_by_mtime(_CODEX_SESSION_CACHE, path, _parse_codex_session)
+        if rec is None:
+            continue
 
-            if row_type == "session_meta":
-                session_title = _session_title(row) or session_title
-                session_cwd = payload.get("cwd") or session_cwd
-                session_at = parse_iso(payload.get("timestamp")) or session_at
+        # Fold this session's rate-limit / context candidates into the global best.
+        best_rate_ts, best_rate_limits = _note_rate_limits(
+            {"rate_limits": rec.rate_limits} if rec.rate_limits else {},
+            rec.rate_ts or "",
+            best_ts=best_rate_ts,
+            best_limits=best_rate_limits,
+        )
+        if rec.ctx_window and rec.ctx_ts and (latest_context_ts is None or rec.ctx_ts > latest_context_ts):
+            latest_context_ts = rec.ctx_ts
+            latest_context_tokens = rec.ctx_tokens
+            latest_context_window = rec.ctx_window
 
-            if row_type == "turn_context":
-                turn = payload or {}
-                session_model = turn.get("model") or session_model
-                session_cwd = turn.get("cwd") or session_cwd
-                session_at = parse_iso(row.get("timestamp")) or session_at
-
-            if row_type == "event_msg" and payload.get("type") == "token_count":
-                info = payload.get("info") or {}
-                usage = info.get("total_token_usage") or info.get("last_token_usage") or {}
-                session_input = max(session_input, int(usage.get("input_tokens") or 0))
-                session_output = max(session_output, int(usage.get("output_tokens") or 0))
-                session_reasoning = max(
-                    session_reasoning, int(usage.get("reasoning_output_tokens") or 0)
-                )
-                session_cached = max(session_cached, int(usage.get("cached_input_tokens") or 0))
-                session_total = max(session_total, int(usage.get("total_tokens") or 0))
-                session_at = parse_iso(row.get("timestamp")) or session_at
-
-                ts = str(row.get("timestamp") or "")
-                best_rate_ts, best_rate_limits = _note_rate_limits(
-                    payload,
-                    ts,
-                    best_ts=best_rate_ts,
-                    best_limits=best_rate_limits,
-                )
-
-                context_window = info.get("model_context_window")
-                if context_window and session_total:
-                    if latest_context_ts is None or ts > latest_context_ts:
-                        latest_context_ts = ts
-                        latest_context_tokens = session_total
-                        latest_context_window = int(context_window)
-
-            if row_type == "event_msg" and payload.get("type") == "task_started":
-                session_active = True
-
-        if session_total <= 0 and session_input <= 0 and session_output <= 0:
+        if rec.total <= 0 and rec.input <= 0 and rec.output <= 0:
             continue
 
         recent = False
-        if session_at and (datetime.now(timezone.utc) - session_at).total_seconds() < 3600:
+        if rec.at and (now - rec.at).total_seconds() < 3600:
             recent = True
-        if (datetime.now(timezone.utc) - file_mtime).total_seconds() < 3600:
+        if rec.mtime_epoch and (now.timestamp() - rec.mtime_epoch) < 3600:
             recent = True
 
-        if session_active and recent:
+        if rec.active and recent:
             stats.active_sessions += 1
-        stats.input_tokens += session_input
-        stats.output_tokens += session_output
-        stats.reasoning_tokens += session_reasoning
-        stats.cached_tokens += session_cached
-        stats.total_tokens += session_total or (session_input + session_output + session_reasoning)
+        stats.input_tokens += rec.input
+        stats.output_tokens += rec.output
+        stats.reasoning_tokens += rec.reasoning
+        stats.cached_tokens += rec.cached
+        stats.total_tokens += rec.total or (rec.input + rec.output + rec.reasoning)
 
-        if session_at and session_at.date() == today:
-            stats.today_tokens += session_total or (session_input + session_output + session_reasoning)
+        if rec.at and rec.at.date() == today:
+            stats.today_tokens += rec.total or (rec.input + rec.output + rec.reasoning)
             today_sessions.add(path)
 
-        if stats.latest_at is None or (session_at and session_at >= stats.latest_at):
-            stats.latest_at = session_at
-            stats.latest_model = session_model
-            stats.latest_cwd = session_cwd
-            stats.latest_title = session_title
+        if stats.latest_at is None or (rec.at and rec.at >= stats.latest_at):
+            stats.latest_at = rec.at
+            stats.latest_model = rec.model
+            stats.latest_cwd = rec.cwd
+            stats.latest_title = rec.title
 
     stats.today_sessions = len(today_sessions)
     stats.context_window = latest_context_window

@@ -1,5 +1,23 @@
 # Changelog
 
+## [2026-06-06] — mtime parse cache for Claude/Codex providers (v0.3.15)
+
+### Performance
+- The panel re-collects every 15s. The Claude and Codex providers used to **fully re-parse** every session JSONL on every tick (up to 64 + 42 files), even when nothing changed. Steady-state cost was ~2s of CPU per tick — roughly 13% of a core, continuously, in the background.
+- Added an **mtime+size keyed parse cache**: a session file that hasn't changed since the last tick returns its parsed record instantly. Only files that actually changed get re-read.
+- Measured: steady-state collection dropped from **~2006 ms → ~2.5 ms** per tick (~800×). The first tick after any session changes re-parses only the changed files.
+- Output is byte-identical to the previous implementation — the cross-session "latest rate limit / context window" picks are `max`-by-timestamp, which is associative, so per-session bests folded globally equal the old global scan.
+
+### Internal
+- `util.cached_by_mtime()` / `util.prune_cache()` — generic per-path parse memoization, pruned to the active scan window each tick.
+- Grok already read only the file tail (`iter_jsonl_tail`), so it was left unchanged.
+
+### Verify
+```bash
+ai-meter snapshot --write --pretty   # numbers unchanged from before
+ai-meter status                       # version: 0.3.15
+```
+
 ## [2026-06-06] — update exits cleanly after restart (v0.3.14)
 
 ### Fixed

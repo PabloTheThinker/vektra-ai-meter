@@ -4,11 +4,44 @@ import hashlib
 import json
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Iterator
+from typing import Any, Callable, Iterator, TypeVar
+
+T = TypeVar("T")
 
 
 def home() -> Path:
     return Path.home()
+
+
+def cached_by_mtime(
+    cache: dict[Path, tuple[tuple[int, int], Any]],
+    path: Path,
+    parse: Callable[[Path], T],
+) -> T | None:
+    """Return parse(path), reusing the last result while (mtime_ns, size) is unchanged.
+
+    The panel re-collects every 15s; session JSONL files rarely change between ticks.
+    Caching the parsed record keyed on the file's signature avoids re-reading the bulk
+    of the history each refresh. Returns None when the file cannot be stat'd.
+    """
+    try:
+        st = path.stat()
+        key = (st.st_mtime_ns, st.st_size)
+    except OSError:
+        cache.pop(path, None)
+        return None
+    entry = cache.get(path)
+    if entry is not None and entry[0] == key:
+        return entry[1]
+    value = parse(path)
+    cache[path] = (key, value)
+    return value
+
+
+def prune_cache(cache: dict[Path, Any], live_paths: set[Path]) -> None:
+    """Drop cache entries for paths no longer in the active scan window."""
+    for stale in [p for p in cache if p not in live_paths]:
+        cache.pop(stale, None)
 
 
 def data_dir() -> Path:
