@@ -65,6 +65,7 @@ def _desktop_content(*, enabled: bool) -> str:
 
 def _systemd_content() -> str:
     exec_path = ai_meter_bin()
+    local = Path.home() / ".local"
     return (
         "[Unit]\n"
         "Description=Vektra AI Meter — AI usage in the top bar\n"
@@ -74,6 +75,8 @@ def _systemd_content() -> str:
         "[Service]\n"
         "Type=simple\n"
         f"ExecStart={exec_path} run\n"
+        f"Environment=LD_LIBRARY_PATH={local}/lib\n"
+        f"Environment=GI_TYPELIB_PATH={local}/lib/girepository-1.0\n"
         "Environment=VEKTRA_TOP_BAR_HEIGHT=36\n"
         "Restart=on-failure\n"
         "RestartSec=8\n"
@@ -210,7 +213,11 @@ def service_status() -> ServiceStatus:
 
 
 def status_dict() -> dict:
+    from .integrate import integration_status
+    from .ipc import popup_server_running
+
     status = service_status()
+    integration = integration_status()
     return {
         "running": status.running,
         "pid": status.pid,
@@ -219,10 +226,32 @@ def status_dict() -> dict:
         "systemd_unit": status.systemd_unit,
         "systemd_active": status.systemd_active,
         "version": status.version,
+        "integrated_popup": integration["integrated_popup"],
+        "popup_server_running": popup_server_running(),
+        "layer_shell_lib": integration["layer_shell_lib"],
+        "integration": integration,
         "lock_file": str(lock_path()),
         "desktop_path": str(autostart_desktop_path()),
         "systemd_path": str(systemd_unit_path()),
     }
+
+
+def _stop_popup_server() -> None:
+    from .ipc import PID_PATH, SOCKET_PATH
+
+    meter = venv_ai_meter()
+    patterns = [str(ai_meter_bin())]
+    if meter.is_file() and meter != ai_meter_bin():
+        patterns.append(str(meter))
+
+    for pattern in patterns:
+        subprocess.run(["pkill", "-f", f"{pattern} popup-server"], check=False)
+
+    try:
+        PID_PATH.unlink(missing_ok=True)
+        SOCKET_PATH.unlink(missing_ok=True)
+    except OSError:
+        pass
 
 
 def _stop_panel() -> None:
@@ -233,6 +262,8 @@ def _stop_panel() -> None:
 
     for pattern in patterns:
         subprocess.run(["pkill", "-f", f"{pattern} run"], check=False)
+
+    _stop_popup_server()
 
     try:
         lock_path().unlink(missing_ok=True)
@@ -257,6 +288,7 @@ def reboot_panel(*, wait: bool = True) -> ServiceStatus:
     had_systemd = systemd_unit_path().is_file() and _systemctl_available()
 
     if had_systemd:
+        _stop_popup_server()
         subprocess.run(
             ["systemctl", "--user", "restart", "vektra-ai-meter.service"],
             check=False,

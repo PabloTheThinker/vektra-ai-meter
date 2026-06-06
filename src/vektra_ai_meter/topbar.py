@@ -1,17 +1,24 @@
-"""Panel top-bar indicator using Qt (PySide6) — no system GTK/AppIndicator deps."""
+"""Panel top-bar indicator using Qt tray + GTK4 layer-shell integrated popup."""
 
 from __future__ import annotations
 
+import subprocess
 import sys
+import time
+from pathlib import Path
 
 from PySide6.QtCore import QTimer
 from PySide6.QtWidgets import QApplication, QSystemTrayIcon
 
 from .autostart import ensure_running_or_exit
+from .gtk_launch import gtk_env, popup_server_argv
+from .ipc import popup_server_running, refresh_popup, toggle_popup
+from .layershell import layer_shell_available
+from .paths import venv_ai_meter
 from .snapshot import write_snapshot
 from .ui.icon import make_tray_icon
 from .ui.panel import UsagePanel
-from .ui.wayland import ClickAwayFilter
+from .ui.wayland import ClickAwayFilter, is_wayland
 
 REFRESH_MS = 15_000
 
@@ -62,9 +69,21 @@ def _icon_bars(snapshot: dict) -> list[float | None]:
     return bars[:4]
 
 
+def _launcher() -> Path:
+    user = Path.home() / ".local" / "bin" / "ai-meter"
+    if user.is_file():
+        return user
+    return venv_ai_meter()
+
+
+def _integrated_mode() -> bool:
+    return is_wayland() and layer_shell_available()
+
+
 class TopBarIndicator:
     def __init__(self) -> None:
         self._lock = ensure_running_or_exit()
+        self.integrated = _integrated_mode()
 
         self.app = QApplication(sys.argv)
         self.app.setApplicationName("Vektra AI Meter")
@@ -81,9 +100,14 @@ class TopBarIndicator:
         self.tray = QSystemTrayIcon()
         self.tray.setToolTip("Vektra AI Meter")
 
-        self.panel = UsagePanel()
-        self.panel.refresh_requested.connect(self._refresh)
-        self._click_away = ClickAwayFilter(self.panel, self.tray)
+        self.panel: UsagePanel | None = None
+        self._click_away: ClickAwayFilter | None = None
+        if self.integrated:
+            self._ensure_popup_server()
+        else:
+            self.panel = UsagePanel()
+            self.panel.refresh_requested.connect(self._refresh)
+            self._click_away = ClickAwayFilter(self.panel, self.tray)
 
         self.tray.activated.connect(self._on_activated)
 
@@ -95,11 +119,41 @@ class TopBarIndicator:
         self.tray.setIcon(make_tray_icon())
         self.tray.show()
 
+    def _ensure_popup_server(self) -> None:
+        if popup_server_running():
+            return
+        launcher = _launcher()
+        if not launcher.is_file():
+            return
+        subprocess.Popen(
+            popup_server_argv(),
+            env=gtk_env(),
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            start_new_session=True,
+        )
+        for _ in range(30):
+            if popup_server_running():
+                return
+            time.sleep(0.1)
+
     def _on_activated(self, reason: QSystemTrayIcon.ActivationReason) -> None:
         if reason not in (
             QSystemTrayIcon.ActivationReason.Trigger,
             QSystemTrayIcon.ActivationReason.Context,
         ):
+            return
+
+        if self.integrated:
+            if not popup_server_running():
+                self._ensure_popup_server()
+            if not toggle_popup():
+                self._ensure_popup_server()
+                time.sleep(0.15)
+                toggle_popup()
+            return
+
+        if self.panel is None:
             return
         if self.panel.isVisible():
             self.panel.hide()
@@ -110,7 +164,10 @@ class TopBarIndicator:
         snapshot = write_snapshot()
         self.tray.setToolTip(_rich_tooltip(snapshot))
         self.tray.setIcon(make_tray_icon(_icon_bars(snapshot)))
-        self.panel.set_snapshot(snapshot)
+        if self.integrated:
+            refresh_popup()
+        elif self.panel is not None:
+            self.panel.set_snapshot(snapshot)
 
     def run(self) -> int:
         return self.app.exec()

@@ -56,6 +56,17 @@ def _pip_upgrade(app: Path, pip: Path) -> None:
     _run([str(pip), "install", "-q", "--upgrade", f"git+{repo}@{branch}"])
 
 
+def _ensure_integration() -> None:
+    from .integrate import build_layer_shell
+    from .ui.wayland import is_wayland
+
+    if not is_wayland():
+        return
+    ok, message = build_layer_shell()
+    if ok and "Already integrated" not in message:
+        print(message)
+
+
 def _restart_topbar() -> None:
     from .autostart import reboot_panel
 
@@ -86,6 +97,8 @@ def run_update(*, restart: bool = True) -> int:
             print("No git checkout found — upgrading package from GitHub...")
         print("Upgrading Python package...")
         _pip_upgrade(app, pip)
+        print("Ensuring integrated top-bar dropdown...")
+        _ensure_integration()
     except UpdateError as exc:
         print(f"Update failed: {exc}", file=sys.stderr)
         return 1

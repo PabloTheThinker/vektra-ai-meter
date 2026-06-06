@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import os
 
-from PySide6.QtCore import QEvent, QObject, QPoint, QRect
+from PySide6.QtCore import QEvent, QObject, QPoint, QRect, Qt
 from PySide6.QtWidgets import QApplication, QSystemTrayIcon, QWidget
 
 from .theme import PANEL_WIDTH

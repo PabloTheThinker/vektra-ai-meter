@@ -1,5 +1,43 @@
 # Changelog
 
+## [2026-06-06] — True one-command install (v0.3.1)
+
+### Changed
+- `curl -fsSL https://vektraindustries.com/ai-tracker/install | bash` now installs apt packages (sudo once), builds gtk4-layer-shell on Wayland, configures autostart, and reboots the meter — no follow-up commands.
+- `ai-meter update` also ensures integrated dropdown is built on Wayland after upgrading.
+
+### Verify
+```bash
+curl -fsSL https://vektraindustries.com/ai-tracker/install | bash
+ai-meter status
+# integrated_popup: true on Wayland
+```
+
+## [2026-06-06] — Full integrated top-bar experience (v0.3.0)
+
+### Added
+- **GTK4 layer-shell popup** — macOS/CodexBar-style dropdown anchored to the top panel on Wayland (COSMIC, Sway, KDE).
+- `ai-meter popup-server` — integrated dropdown process (auto-started by `ai-meter run`).
+- `ai-meter integrate` / `ai-meter integrate --build` — check setup or build gtk4-layer-shell into `~/.local`.
+- Installer builds **gtk4-layer-shell** when GTK4 dev headers are present; prints setup steps otherwise.
+- `ai-meter status` reports `integrated_popup`, `popup_server_running`, and full `integration` block.
+- Click-away close on integrated popup via transparent layer-shell backdrop.
+
+### Changed
+- On Wayland + layer-shell: tray click opens integrated popup instead of a separate Qt window.
+- Qt panel remains as fallback on X11 or when layer-shell is unavailable.
+- `ai-meter reboot` stops orphaned popup-server processes before systemd restart.
+
+### Verify
+```bash
+sudo apt install -y pkg-config libgtk-4-dev libwayland-dev wayland-protocols \
+  gobject-introspection libgirepository-2.0-dev python3-gi gir1.2-gtk-4.0
+ai-meter integrate --build
+ai-meter reboot
+ai-meter status
+# integrated_popup: true, popup_server_running: true
+```
+
 ## [2026-06-06] — Generated tray icon + top-bar dropdown integration (v0.2.9)
 
 ### Added

@@ -70,6 +70,34 @@ def cmd_update(args: argparse.Namespace) -> int:
     return run_update(restart=not args.no_restart)
 
 
+def cmd_popup_server(_args: argparse.Namespace) -> int:
+    import os
+
+    from .gtk_launch import gtk_env, gtk_python_available, popup_server_argv
+
+    if not gtk_python_available():
+        print(
+            "python3-gi is required for the integrated dropdown.\n"
+            "Install: sudo apt install python3-gi gir1.2-gtk-4.0",
+            file=sys.stderr,
+        )
+        return 1
+
+    argv = popup_server_argv()
+    if "-m" in argv and argv[0] != sys.executable:
+        os.execve(argv[0], argv, gtk_env())
+
+    from .popup_server import run_popup_server
+
+    return run_popup_server()
+
+
+def cmd_integrate(args: argparse.Namespace) -> int:
+    from .integrate import run_integrate
+
+    return run_integrate(build=args.build, force=args.force)
+
+
 def cmd_reboot(_args: argparse.Namespace) -> int:
     from .autostart import reboot_panel
 
@@ -125,6 +153,28 @@ def main() -> int:
 
     reboot = sub.add_parser("reboot", help="Restart the panel top-bar indicator")
     reboot.set_defaults(func=cmd_reboot)
+
+    popup = sub.add_parser(
+        "popup-server",
+        help="GTK4 layer-shell integrated dropdown (internal)",
+    )
+    popup.set_defaults(func=cmd_popup_server)
+
+    integrate = sub.add_parser(
+        "integrate",
+        help="Set up GTK4 layer-shell integrated top-bar dropdown (Wayland)",
+    )
+    integrate.add_argument(
+        "--build",
+        action="store_true",
+        help="Build gtk4-layer-shell into ~/.local when dependencies are installed",
+    )
+    integrate.add_argument(
+        "--force",
+        action="store_true",
+        help="Rebuild gtk4-layer-shell even if already present",
+    )
+    integrate.set_defaults(func=cmd_integrate)
 
     args = parser.parse_args()
     return args.func(args)
