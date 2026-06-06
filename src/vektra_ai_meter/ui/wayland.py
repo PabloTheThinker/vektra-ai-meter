@@ -5,6 +5,8 @@ import os
 from PySide6.QtCore import QEvent, QObject, QPoint, QRect
 from PySide6.QtWidgets import QApplication, QSystemTrayIcon, QWidget
 
+from .theme import PANEL_WIDTH
+
 
 def is_wayland() -> bool:
     session = os.environ.get("XDG_SESSION_TYPE", "").lower()
@@ -41,9 +43,9 @@ def panel_origin(tray: QSystemTrayIcon, panel_width: int, panel_height: int) -> 
         y = anchor.bottom() + 2
         caret_x = center_x - x
     else:
-        x = available.right() - panel_width - 12
+        x = available.right() - PANEL_WIDTH - 14
         y = available.top() + 6
-        caret_x = panel_width - 36
+        caret_x = PANEL_WIDTH - 40
 
     if y + panel_height > available.bottom():
         y = max(available.top() + 6, anchor.y() - panel_height - 4)

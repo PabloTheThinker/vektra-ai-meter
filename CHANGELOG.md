@@ -1,5 +1,14 @@
 # Changelog
 
+## [2026-06-06] — CodexBar-inspired panel polish (v0.2.8)
+
+### Changed
+- Refined popover: drop shadow, provider accent bars, brand badges, summary pills.
+- Quota rows match CodexBar layout — window title, reset countdown, thin bar, bold %.
+- Humanized window labels (`5-hour window`, `Weekly`, `Context window`).
+- Header refresh ↻ + close ✕; footer shows `Updated Ns ago`.
+- Provider subtitles show project + model; plan badge for Codex.
+
 ## [2026-06-06] — Panel dropdown + close button
 
 ### Changed

@@ -3,17 +3,15 @@ from __future__ import annotations
 from PySide6.QtCore import Qt
 from PySide6.QtGui import QColor, QIcon, QPainter, QPixmap
 
+from .theme import usage_color
 
-def _usage_color(percent: float) -> QColor:
-    if percent >= 85:
-        return QColor("#ef4444")
-    if percent >= 60:
-        return QColor("#f59e0b")
-    return QColor("#22c55e")
+
+def _qcolor(hex_value: str) -> QColor:
+    return QColor(hex_value)
 
 
 def make_tray_icon(bars: list[float | None] | None = None) -> QIcon:
-    """Draw a tiny multi-bar meter icon (CodexBar-style) for the status tray."""
+    """Draw a CodexBar-style multi-bar meter for the status tray."""
     size = 22
     pixmap = QPixmap(size, size)
     pixmap.fill(Qt.GlobalColor.transparent)
@@ -21,26 +19,26 @@ def make_tray_icon(bars: list[float | None] | None = None) -> QIcon:
     values = list(bars or [])
     while len(values) < 3:
         values.append(None)
-    values = values[:4]
+    values = values[:3]
 
     painter = QPainter(pixmap)
     painter.setRenderHint(QPainter.RenderHint.Antialiasing)
 
-    track = QColor("#3f3f46")
+    track = _qcolor("#3f3f46")
     gap = 2
-    bar_w = max(2, (size - gap * (len(values) + 1)) // len(values))
+    bar_w = max(3, (size - gap * (len(values) + 1)) // len(values))
     x = gap
+    bar_h = size - gap * 2
 
     for value in values:
-        height = size - gap * 2
         painter.setBrush(track)
         painter.setPen(Qt.PenStyle.NoPen)
-        painter.drawRoundedRect(x, gap, bar_w, height, 1, 1)
+        painter.drawRoundedRect(x, gap, bar_w, bar_h, 2, 2)
 
         if value is not None:
-            fill = max(2, int(height * min(100.0, max(0.0, value)) / 100.0))
-            painter.setBrush(_usage_color(value))
-            painter.drawRoundedRect(x, gap + (height - fill), bar_w, fill, 1, 1)
+            fill_h = max(2, int(bar_h * min(100.0, max(0.0, value)) / 100.0))
+            painter.setBrush(_qcolor(usage_color(value)))
+            painter.drawRoundedRect(x, gap + (bar_h - fill_h), bar_w, fill_h, 2, 2)
 
         x += bar_w + gap
 
