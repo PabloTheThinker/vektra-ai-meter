@@ -5,11 +5,12 @@ from __future__ import annotations
 import sys
 
 from PySide6.QtCore import QTimer
-from PySide6.QtGui import QAction, QIcon
+from PySide6.QtGui import QAction
 from PySide6.QtWidgets import QApplication, QMenu, QSystemTrayIcon
 
 from .snapshot import write_snapshot
-from .util import fmt_tokens
+from .ui.icon import make_tray_icon
+from .ui.panel import UsagePanel
 
 REFRESH_MS = 15_000
 
@@ -28,26 +29,20 @@ def _compact_label(snapshot: dict) -> str:
     return f"{total} · {active} active"
 
 
-def _provider_line(provider: dict) -> str:
-    parts: list[str] = []
-    limits = provider.get("limits") or []
-    if limits:
-        for limit in limits:
-            label = limit.get("label")
+def _icon_bars(snapshot: dict) -> list[float | None]:
+    bars: list[float | None] = []
+    for provider in snapshot.get("providers") or []:
+        peak: float | None = None
+        for limit in provider.get("limits") or []:
             used = limit.get("used_percent")
-            if used is not None and label:
-                parts.append(f"{label} {used:.0f}%")
-            elif limit.get("detail") and label:
-                parts.append(f"{label} {limit['detail']}")
-    elif provider.get("limit_headline"):
-        parts.append(provider["limit_headline"])
-    else:
-        parts.append(fmt_tokens(provider.get("total_tokens")))
-
-    if provider.get("active_sessions"):
-        parts.append(f"{provider['active_sessions']} active")
-
-    return f"{provider.get('label')}: " + " · ".join(parts)
+            if used is None or limit.get("label") == "Session":
+                continue
+            value = float(used)
+            peak = value if peak is None else max(peak, value)
+        bars.append(peak)
+    while len(bars) < 3:
+        bars.append(None)
+    return bars[:4]
 
 
 class TopBarIndicator:
@@ -64,14 +59,22 @@ class TopBarIndicator:
             )
             raise SystemExit(1)
 
-        icon = QIcon.fromTheme("utilities-system-monitor")
-        if icon.isNull():
-            icon = QIcon.fromTheme("dialog-information")
-
-        self.tray = QSystemTrayIcon(icon)
+        self.tray = QSystemTrayIcon()
         self.tray.setToolTip("Vektra AI Meter")
-        self.menu = QMenu()
-        self.tray.setContextMenu(self.menu)
+
+        self.panel = UsagePanel()
+        self.panel.refresh_requested.connect(self._refresh)
+        self.panel.quit_requested.connect(self.app.quit)
+
+        self.fallback_menu = QMenu()
+        refresh_action = QAction("Refresh now", self.fallback_menu)
+        refresh_action.triggered.connect(self._refresh)
+        self.fallback_menu.addAction(refresh_action)
+        quit_action = QAction("Quit", self.fallback_menu)
+        quit_action.triggered.connect(self.app.quit)
+        self.fallback_menu.addAction(quit_action)
+        self.tray.setContextMenu(self.fallback_menu)
+
         self.tray.activated.connect(self._on_activated)
 
         self.timer = QTimer()
@@ -79,46 +82,25 @@ class TopBarIndicator:
         self.timer.start(REFRESH_MS)
         self._refresh()
 
+        self.tray.setIcon(make_tray_icon())
         self.tray.show()
 
     def _on_activated(self, reason: QSystemTrayIcon.ActivationReason) -> None:
-        if reason == QSystemTrayIcon.ActivationReason.Trigger:
-            self.menu.popup(self.tray.geometry().center())
+        if reason in (
+            QSystemTrayIcon.ActivationReason.Trigger,
+            QSystemTrayIcon.ActivationReason.Context,
+        ):
+            if self.panel.isVisible():
+                self.panel.hide()
+            else:
+                self.panel.popup_near_tray(self.tray)
 
     def _refresh(self) -> None:
         snapshot = write_snapshot()
         label = _compact_label(snapshot)
         self.tray.setToolTip(f"Vektra AI Meter\n{label}")
-        self._rebuild_menu(snapshot)
-
-    def _rebuild_menu(self, snapshot: dict) -> None:
-        self.menu.clear()
-
-        summary = snapshot.get("summary") or {}
-        header_bits = []
-        if summary.get("peak_percent_fmt") and summary.get("peak_percent_fmt") != "—":
-            header_bits.append(f"Peak {summary['peak_percent_fmt']}")
-        else:
-            header_bits.append(f"Total {summary.get('total_tokens_fmt', '—')}")
-        header_bits.append(f"{summary.get('active_sessions', 0)} active")
-        header = QAction(" · ".join(header_bits), self.menu)
-        header.setEnabled(False)
-        self.menu.addAction(header)
-        self.menu.addSeparator()
-
-        for provider in snapshot.get("providers") or []:
-            item = QAction(_provider_line(provider), self.menu)
-            item.setEnabled(False)
-            self.menu.addAction(item)
-
-        self.menu.addSeparator()
-        refresh = QAction("Refresh now", self.menu)
-        refresh.triggered.connect(self._refresh)
-        self.menu.addAction(refresh)
-
-        quit_action = QAction("Quit", self.menu)
-        quit_action.triggered.connect(self.app.quit)
-        self.menu.addAction(quit_action)
+        self.tray.setIcon(make_tray_icon(_icon_bars(snapshot)))
+        self.panel.set_snapshot(snapshot)
 
     def run(self) -> int:
         return self.app.exec()

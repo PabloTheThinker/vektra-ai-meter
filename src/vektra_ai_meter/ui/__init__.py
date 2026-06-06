@@ -1,0 +1,1 @@
+"""Qt UI helpers for the panel tray indicator."""
