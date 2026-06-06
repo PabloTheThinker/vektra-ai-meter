@@ -1,5 +1,12 @@
 # Changelog
 
+## [2026-06-06] — Wayland panel fix (no grabbing popup)
+
+### Fixed
+- COSMIC/Wayland `Failed to create grabbing popup` — panel now uses a stay-on-top Tool window with a tray anchor transient parent instead of `Qt.Popup`.
+- Removed `QMenu` context menu (also broken on Wayland); Refresh/Quit live in the panel.
+- Panel auto-hides on focus loss; positions near tray or top-right status area fallback.
+
 ## [2026-06-06] — CodexBar-style usage panel and Wayland tray fixes
 
 ### Added

@@ -2,8 +2,7 @@ from __future__ import annotations
 
 from datetime import datetime, timezone
 
-from PySide6.QtCore import QPoint, Qt, Signal
-from PySide6.QtGui import QColor
+from PySide6.QtCore import QEvent, Qt, Signal
 from PySide6.QtWidgets import (
     QFrame,
     QHBoxLayout,
@@ -12,10 +11,11 @@ from PySide6.QtWidgets import (
     QPushButton,
     QScrollArea,
     QSizePolicy,
-    QSystemTrayIcon,
     QVBoxLayout,
     QWidget,
 )
+
+from .wayland import bind_transient_parent, is_wayland, panel_origin
 
 
 def _usage_color_css(percent: float) -> str:
@@ -146,12 +146,14 @@ class UsagePanel(QWidget):
     refresh_requested = Signal()
     quit_requested = Signal()
 
-    def __init__(self) -> None:
+    def __init__(self, anchor: QWidget) -> None:
         super().__init__()
+        self._anchor = anchor
+        # Avoid Qt.WindowType.Popup on Wayland — it requires a grabbing popup parent.
         self.setWindowFlags(
-            Qt.WindowType.Popup
+            Qt.WindowType.Tool
             | Qt.WindowType.FramelessWindowHint
-            | Qt.WindowType.NoDropShadowWindowHint
+            | Qt.WindowType.WindowStaysOnTopHint
         )
         self.setAttribute(Qt.WidgetAttribute.WA_ShowWithoutActivating, False)
         self.setFixedWidth(320)
@@ -234,12 +236,23 @@ class UsagePanel(QWidget):
         max_h = min(self.sizeHint().height(), 520)
         self.setFixedHeight(max_h)
 
-    def popup_near_tray(self, tray: QSystemTrayIcon) -> None:
-        geo = tray.geometry()
-        if geo.isValid():
-            x = geo.x() + max(0, (geo.width() - self.width()) // 2)
-            y = geo.y() + geo.height() + 8
-            self.move(QPoint(x, y))
+    def hide(self) -> None:
+        super().hide()
+        self._anchor.hide()
+
+    def changeEvent(self, event: QEvent) -> None:
+        if event.type() == QEvent.Type.WindowDeactivate and self.isVisible():
+            self.hide()
+        super().changeEvent(event)
+
+    def popup_near_tray(self, tray) -> None:
+        rect = panel_origin(tray, self.width())
+        self._anchor.setGeometry(rect.x(), rect.y() - 9, 1, 1)
+        self._anchor.show()
+        self._anchor.raise_()
+        bind_transient_parent(self, self._anchor)
+        self.move(rect)
         self.show()
         self.raise_()
-        self.activateWindow()
+        if not is_wayland():
+            self.activateWindow()

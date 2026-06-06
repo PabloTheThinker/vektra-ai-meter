@@ -5,12 +5,12 @@ from __future__ import annotations
 import sys
 
 from PySide6.QtCore import QTimer
-from PySide6.QtGui import QAction
-from PySide6.QtWidgets import QApplication, QMenu, QSystemTrayIcon
+from PySide6.QtWidgets import QApplication, QSystemTrayIcon
 
 from .snapshot import write_snapshot
 from .ui.icon import make_tray_icon
 from .ui.panel import UsagePanel
+from .ui.wayland import TrayAnchor
 
 REFRESH_MS = 15_000
 
@@ -59,21 +59,13 @@ class TopBarIndicator:
             )
             raise SystemExit(1)
 
+        self.anchor = TrayAnchor()
         self.tray = QSystemTrayIcon()
         self.tray.setToolTip("Vektra AI Meter")
 
-        self.panel = UsagePanel()
+        self.panel = UsagePanel(self.anchor)
         self.panel.refresh_requested.connect(self._refresh)
         self.panel.quit_requested.connect(self.app.quit)
-
-        self.fallback_menu = QMenu()
-        refresh_action = QAction("Refresh now", self.fallback_menu)
-        refresh_action.triggered.connect(self._refresh)
-        self.fallback_menu.addAction(refresh_action)
-        quit_action = QAction("Quit", self.fallback_menu)
-        quit_action.triggered.connect(self.app.quit)
-        self.fallback_menu.addAction(quit_action)
-        self.tray.setContextMenu(self.fallback_menu)
 
         self.tray.activated.connect(self._on_activated)
 
@@ -86,14 +78,15 @@ class TopBarIndicator:
         self.tray.show()
 
     def _on_activated(self, reason: QSystemTrayIcon.ActivationReason) -> None:
-        if reason in (
+        if reason not in (
             QSystemTrayIcon.ActivationReason.Trigger,
             QSystemTrayIcon.ActivationReason.Context,
         ):
-            if self.panel.isVisible():
-                self.panel.hide()
-            else:
-                self.panel.popup_near_tray(self.tray)
+            return
+        if self.panel.isVisible():
+            self.panel.hide()
+        else:
+            self.panel.popup_near_tray(self.tray)
 
     def _refresh(self) -> None:
         snapshot = write_snapshot()
