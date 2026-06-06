@@ -279,19 +279,40 @@ if [[ "${VEKTRA_AI_METER_UPDATE:-0}" != "1" ]]; then
   echo ""
 fi
 
-if [[ "${VEKTRA_AI_METER_LAUNCH:-1}" == "1" ]]; then
-  pkill -f "${VENV_DIR}/bin/ai-meter" 2>/dev/null || true
-  pkill -f "ai-meter popup-server" 2>/dev/null || true
-  pkill -f "vektra_ai_meter.popup_server" 2>/dev/null || true
+launch_panel_indicator() {
+  # Restart detached — bash must not wait on the Qt tray process (curl | bash / ai-meter update).
   if [[ "${VEKTRA_AI_METER_UPDATE:-0}" == "1" ]]; then
     log "Restarting panel indicator..."
   else
     log "Starting panel indicator..."
   fi
-  if "$BIN_DIR/ai-meter" reboot >/dev/null 2>&1; then
-    ok "Panel indicator running — look in your top-bar status area"
+  if "$BIN_DIR/ai-meter" reboot --no-wait >/dev/null 2>&1; then
+    if [[ "${VEKTRA_AI_METER_UPDATE:-0}" == "1" ]]; then
+      ok "Panel indicator restarted"
+    else
+      ok "Panel indicator running — look in your top-bar status area"
+    fi
+    return 0
+  fi
+  if command -v setsid >/dev/null 2>&1; then
+    setsid "$BIN_DIR/ai-meter" run </dev/null >/dev/null 2>&1 &
   else
-    nohup "$BIN_DIR/ai-meter" run >/dev/null 2>&1 &
+    nohup "$BIN_DIR/ai-meter" run </dev/null >/dev/null 2>&1 &
+  fi
+  disown -h "$!" 2>/dev/null || true
+  if [[ "${VEKTRA_AI_METER_UPDATE:-0}" == "1" ]]; then
+    ok "Panel indicator restarted"
+  else
     ok "Panel indicator running — look in your top-bar status area"
   fi
+}
+
+if [[ "${VEKTRA_AI_METER_LAUNCH:-1}" == "1" ]]; then
+  # Only stop the tray/popup — never match `ai-meter update` / `ai-meter install`.
+  pkill -f "${VENV_DIR}/bin/ai-meter run" 2>/dev/null || true
+  pkill -f "${VENV_DIR}/bin/ai-meter popup-server" 2>/dev/null || true
+  pkill -f "ai-meter run" 2>/dev/null || true
+  pkill -f "ai-meter popup-server" 2>/dev/null || true
+  pkill -f "vektra_ai_meter.popup_server" 2>/dev/null || true
+  launch_panel_indicator
 fi

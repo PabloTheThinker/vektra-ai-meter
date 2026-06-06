@@ -3,17 +3,22 @@ from __future__ import annotations
 import os
 from dataclasses import dataclass
 
+from .cosmic import cosmic_top_bar_height, is_cosmic
 from .theme import PANEL_WIDTH
 
 PANEL_HEIGHT = 420
 
 
 def top_bar_height() -> int:
-    raw = os.environ.get("VEKTRA_TOP_BAR_HEIGHT", "36")
-    try:
-        return max(24, min(64, int(raw)))
-    except ValueError:
-        return 36
+    raw = os.environ.get("VEKTRA_TOP_BAR_HEIGHT")
+    if raw is not None and raw.strip():
+        try:
+            return max(24, min(64, int(raw.strip())))
+        except ValueError:
+            pass
+    if is_cosmic():
+        return cosmic_top_bar_height()
+    return 36
 
 
 @dataclass(frozen=True)
@@ -50,9 +55,19 @@ def compute_panel_placement(
     panel_x = min(max(sx + 6, panel_x), sx + sw - panel_width - 6)
     panel_y = max(ty + th + 1, sy + bar_h)
 
+    screen_mid = sx + sw // 2
+    if center_x >= screen_mid:
+        margin_right = max(6, (sx + sw) - (panel_x + panel_width))
+        return PanelPlacement(
+            margin_top=panel_y - sy,
+            margin_left=0,
+            margin_right=margin_right,
+            anchor_left=False,
+        )
+
     return PanelPlacement(
         margin_top=panel_y - sy,
         margin_left=panel_x - sx,
-        margin_right=10,
+        margin_right=0,
         anchor_left=True,
     )

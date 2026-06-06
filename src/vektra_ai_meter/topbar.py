@@ -18,7 +18,7 @@ from .paths import venv_ai_meter
 from .snapshot import write_snapshot
 from .ui.icon import make_tray_icon
 from .ui.panel import UsagePanel
-from .ui.wayland import ClickAwayFilter, is_wayland, tray_anchor_rect
+from .ui.wayland import ClickAwayFilter, is_wayland, screen_for_tray, tray_anchor_rect
 from .util import snapshot_display_digest
 
 REFRESH_MS = 15_000
@@ -153,9 +153,7 @@ class TopBarIndicator:
 
     def _popup_show_geometry(self) -> tuple[tuple[int, int, int, int], tuple[int, int, int, int]]:
         anchor = tray_anchor_rect(self.tray)
-        screen = QApplication.screenAt(anchor.center())
-        if screen is None:
-            screen = QApplication.primaryScreen()
+        screen = screen_for_tray(self.tray)
         if screen is None:
             return (
                 (anchor.x(), anchor.y(), anchor.width(), anchor.height()),

@@ -109,12 +109,16 @@ def cmd_integrate(args: argparse.Namespace) -> int:
     return run_integrate(build=args.build, force=args.force)
 
 
-def cmd_reboot(_args: argparse.Namespace) -> int:
+def cmd_reboot(args: argparse.Namespace) -> int:
     from .autostart import reboot_panel
     from .integrate import integration_status
 
-    print("Restarting Vektra AI Meter...")
-    status = reboot_panel()
+    if not args.no_wait:
+        print("Restarting Vektra AI Meter...")
+    status = reboot_panel(wait=not args.no_wait)
+    if args.no_wait:
+        return 0
+
     if not status.running:
         print(
             "Restart issued but the panel is not running yet. "
@@ -174,6 +178,11 @@ def main() -> int:
     upd.set_defaults(func=cmd_update)
 
     reboot = sub.add_parser("reboot", help="Restart the panel top-bar indicator")
+    reboot.add_argument(
+        "--no-wait",
+        action="store_true",
+        help="Restart in the background and exit immediately (used by install/update)",
+    )
     reboot.set_defaults(func=cmd_reboot)
 
     popup = sub.add_parser(

@@ -72,7 +72,12 @@ def _restart_topbar() -> bool:
         )
         return False
 
-    result = subprocess.run([str(launcher), "reboot"], check=False)
+    result = subprocess.run(
+        [str(launcher), "reboot", "--no-wait"],
+        check=False,
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+    )
     return result.returncode == 0
 
 

@@ -3,8 +3,11 @@ from __future__ import annotations
 import os
 
 from PySide6.QtCore import QEvent, QObject, QPoint, QRect, Qt
+from PySide6.QtGui import QCursor
 from PySide6.QtWidgets import QApplication, QSystemTrayIcon, QWidget
 
+from .cosmic import estimate_tray_rect, is_cosmic
+from .placement import top_bar_height
 from .theme import PANEL_WIDTH
 
 
@@ -13,12 +16,21 @@ def is_wayland() -> bool:
     return session == "wayland" or bool(os.environ.get("WAYLAND_DISPLAY"))
 
 
-def top_bar_height() -> int:
-    raw = os.environ.get("VEKTRA_TOP_BAR_HEIGHT", "36")
-    try:
-        return max(24, min(64, int(raw)))
-    except ValueError:
-        return 36
+def _screen_tuple(screen) -> tuple[int, int, int, int]:
+    geo = screen.geometry()
+    return (geo.x(), geo.y(), geo.width(), geo.height())
+
+
+def screen_for_tray(tray: QSystemTrayIcon):
+    geo = tray.geometry()
+    if geo.isValid() and geo.width() > 0 and geo.height() > 0:
+        screen = QApplication.screenAt(geo.center())
+        if screen is not None:
+            return screen
+    cursor_screen = QApplication.screenAt(QCursor.pos())
+    if cursor_screen is not None:
+        return cursor_screen
+    return QApplication.primaryScreen()
 
 
 def tray_anchor_rect(tray: QSystemTrayIcon) -> QRect:
@@ -26,9 +38,16 @@ def tray_anchor_rect(tray: QSystemTrayIcon) -> QRect:
     if geo.isValid() and geo.width() > 0 and geo.height() > 0:
         return geo
 
-    screen = QApplication.primaryScreen()
+    screen = screen_for_tray(tray)
     if screen is None:
         return QRect(100, 0, 24, 24)
+
+    screen_rect = _screen_tuple(screen)
+    if is_cosmic():
+        estimated = estimate_tray_rect(screen_rect)
+        if estimated is not None:
+            x, y, w, h = estimated
+            return QRect(x, y, w, h)
 
     full = screen.geometry()
     bar_h = top_bar_height()
@@ -43,18 +62,16 @@ def _tray_geometry_known(tray: QSystemTrayIcon) -> bool:
 def panel_origin(tray: QSystemTrayIcon, panel_width: int, panel_height: int) -> tuple[QPoint, int]:
     """Anchor dropdown flush under the top panel / tray icon."""
     anchor = tray_anchor_rect(tray)
-    screen = QApplication.primaryScreen()
+    screen = screen_for_tray(tray)
     full = screen.geometry() if screen else QRect(0, 0, 1920, 1080)
     bar_h = top_bar_height()
 
-    if _tray_geometry_known(tray):
-        center_x = anchor.center().x()
-        x = center_x - panel_width // 2
-        y = anchor.bottom() + 1
-        caret_x = center_x - x
-    else:
-        x = full.right() - panel_width - 10
-        y = full.top() + bar_h
+    center_x = anchor.center().x()
+    x = center_x - panel_width // 2
+    y = anchor.bottom() + 1
+    caret_x = center_x - x
+
+    if not _tray_geometry_known(tray):
         caret_x = panel_width - 32
 
     x = min(max(full.left() + 6, x), full.right() - panel_width - 6)

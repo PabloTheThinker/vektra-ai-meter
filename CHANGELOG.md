@@ -1,5 +1,35 @@
 # Changelog
 
+## [2026-06-06] — update exits cleanly after restart (v0.3.14)
+
+### Fixed
+- `ai-meter update` and `curl | bash` no longer hang after the final ✓ line — bash was waiting on a background `ai-meter run` (Qt event loop). Restart now uses `ai-meter reboot --no-wait` and fully detaches fallback launches (`disown` / `setsid`).
+- `install.sh` no longer `pkill`s the running `ai-meter update` command (patterns are scoped to `run` / `popup-server` only).
+- Update finish line is shorter: `✓ Panel indicator restarted` (no need to Ctrl+C).
+
+### Verify
+```bash
+ai-meter update
+# Should return to shell immediately after the last ✓ line
+```
+
+## [2026-06-06] — COSMIC tray placement without Qt geometry (v0.3.13)
+
+### Fixed
+- **COSMIC:** `QSystemTrayIcon.geometry()` is always empty on Wayland — dropdown no longer falls back to the top-right corner. Tray position is estimated from StatusNotifier registration order + `~/.config/cosmic/com.system76.CosmicPanel.Panel` wing layout.
+- Layer-shell anchors pick the nearest horizontal edge (RIGHT for status-area icons) so margins stay stable on wide panels.
+- Multi-monitor: screen is chosen from cursor / tray center instead of always `primaryScreen()`.
+
+### Changed
+- `VEKTRA_TOP_BAR_HEIGHT` is optional on COSMIC — when unset, bar height is inferred from panel size (`XS`→32, `S`→40, …). Explicit env still overrides (e.g. systemd unit).
+
+### Verify
+```bash
+ai-meter update
+# Click tray — panel should open under the Vektra icon in the status area (not pinned top-right)
+# ✕, refresh, click-away, re-click tray should all still work
+```
+
 ## [2026-06-06] — tray-anchored dropdown on COSMIC/Wayland (v0.3.12)
 
 ### Fixed
