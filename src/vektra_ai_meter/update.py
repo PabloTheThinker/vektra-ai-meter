@@ -36,14 +36,15 @@ def _installed_version() -> str:
         return "unknown"
 
 
-def _git_pull(app: Path, branch: str) -> None:
+def _git_sync(app: Path, branch: str) -> None:
     if not (app / ".git").is_dir():
         return
     if not which("git"):
         raise UpdateError("git is required to update from a cloned install.")
     _run(["git", "-C", str(app), "fetch", "origin", branch])
-    _run(["git", "-C", str(app), "checkout", branch])
-    _run(["git", "-C", str(app), "pull", "--ff-only", "origin", branch])
+    _run(["git", "-C", str(app), "checkout", "-f", branch])
+    _run(["git", "-C", str(app), "reset", "--hard", f"origin/{branch}"])
+    _run(["git", "-C", str(app), "clean", "-fd"])
 
 
 def _pip_upgrade(app: Path, pip: Path) -> None:
@@ -92,7 +93,7 @@ def run_update(*, restart: bool = True) -> int:
         branch = default_branch()
         if (app / ".git").is_dir():
             print(f"Pulling latest from {default_repo_url()} ({branch})...")
-            _git_pull(app, branch)
+            _git_sync(app, branch)
         else:
             print("No git checkout found — upgrading package from GitHub...")
         print("Upgrading Python package...")

@@ -1,5 +1,16 @@
 # Changelog
 
+## [2026-06-06] — Installer git sync fix (v0.3.2)
+
+### Fixed
+- Re-run install no longer fails when `~/.local/share/vektra-ai-meter/app` has stale local changes or untracked files from older installs — uses `git reset --hard` + `git clean` instead of `git pull`.
+- `ai-meter update` uses the same sync strategy.
+
+### Verify
+```bash
+curl -fsSL https://vektraindustries.com/ai-tracker/install | bash
+```
+
 ## [2026-06-06] — True one-command install (v0.3.1)
 
 ### Changed

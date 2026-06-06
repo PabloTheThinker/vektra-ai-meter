@@ -191,17 +191,28 @@ ensure_prerequisites
 
 mkdir -p "$INSTALL_ROOT" "$BIN_DIR" "$AUTOSTART_DIR" "${LOCAL_PREFIX}/lib"
 
-if [[ -n "${VEKTRA_AI_METER_APP_DIR:-}" ]]; then
-  log "Using app directory: $APP_DIR"
-elif [[ -d "$APP_DIR/.git" ]]; then
-  log "Updating..."
-  git -C "$APP_DIR" fetch origin "$BRANCH"
-  git -C "$APP_DIR" checkout "$BRANCH"
-  git -C "$APP_DIR" pull --ff-only origin "$BRANCH"
-else
+sync_app_repo() {
+  if [[ -n "${VEKTRA_AI_METER_APP_DIR:-}" ]]; then
+    log "Using app directory: $APP_DIR"
+    return 0
+  fi
+
+  if [[ -d "$APP_DIR/.git" ]]; then
+    log "Updating..."
+    # Managed install dir must mirror upstream — discard stale local edits from older installs.
+    git -C "$APP_DIR" fetch origin "$BRANCH"
+    git -C "$APP_DIR" checkout -f "$BRANCH"
+    git -C "$APP_DIR" reset --hard "origin/${BRANCH}"
+    git -C "$APP_DIR" clean -fd
+    return 0
+  fi
+
   log "Downloading..."
+  rm -rf "$APP_DIR"
   git clone --depth 1 --branch "$BRANCH" "$REPO_URL" "$APP_DIR"
-fi
+}
+
+sync_app_repo
 
 if [[ ! -d "$VENV_DIR" ]]; then
   log "Creating Python environment..."
