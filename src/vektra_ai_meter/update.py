@@ -77,13 +77,18 @@ def _ensure_integration() -> None:
     result = subprocess.run(
         [str(launcher), "integrate", "--build"],
         check=False,
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.PIPE,
         text=True,
     )
     if result.returncode != 0:
+        detail = (result.stderr or "").strip()
         print(
             "Warning: integrated dropdown build skipped — Qt panel fallback remains active.",
             file=sys.stderr,
         )
+        if detail:
+            print(detail, file=sys.stderr)
 
 
 def _restart_topbar() -> bool:
