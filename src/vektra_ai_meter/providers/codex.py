@@ -5,6 +5,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
+from ..limits import UsageLimit, context_limit, has_window_limits, parse_codex_rate_limits
 from ..util import home, iter_jsonl, parse_iso, unix_ts
 
 
@@ -26,8 +27,11 @@ class CodexStats:
     rate_primary_resets_at: datetime | None = None
     rate_secondary_resets_at: datetime | None = None
     plan_type: str | None = None
+    context_window: int | None = None
+    context_used_tokens: int | None = None
     today_tokens: int = 0
     today_sessions: int = 0
+    limits: list[UsageLimit] = field(default_factory=list)
 
 
 def _session_title(payload: dict[str, Any]) -> str | None:
@@ -40,6 +44,50 @@ def _session_title(payload: dict[str, Any]) -> str | None:
     return meta.get("id")
 
 
+def _pick_latest_rate_limits(root: Path) -> dict[str, Any] | None:
+    best_ts: str | None = None
+    best_limits: dict[str, Any] | None = None
+
+    for path in root.rglob("rollout-*.jsonl"):
+        for row in iter_jsonl(path):
+            if row.get("type") != "event_msg":
+                continue
+            payload = row.get("payload") or {}
+            if payload.get("type") != "token_count":
+                continue
+            limits = payload.get("rate_limits") or (payload.get("info") or {}).get("rate_limits")
+            if not limits or not has_window_limits(limits):
+                continue
+            ts = str(row.get("timestamp") or "")
+            if best_ts is None or ts > best_ts:
+                best_ts = ts
+                best_limits = limits
+
+    return best_limits
+
+
+def _apply_rate_limits(stats: CodexStats, limits: dict[str, Any] | None) -> None:
+    if not limits:
+        return
+
+    primary = limits.get("primary") or {}
+    secondary = limits.get("secondary") or {}
+    if primary.get("used_percent") is not None:
+        stats.rate_primary_pct = float(primary["used_percent"])
+        stats.rate_primary_resets_at = unix_ts(primary.get("resets_at"))
+    if secondary.get("used_percent") is not None:
+        stats.rate_secondary_pct = float(secondary["used_percent"])
+        stats.rate_secondary_resets_at = unix_ts(secondary.get("resets_at"))
+    stats.plan_type = limits.get("plan_type") or stats.plan_type
+    stats.limits = parse_codex_rate_limits(
+        limits,
+        resets={
+            "primary": stats.rate_primary_resets_at,
+            "secondary": stats.rate_secondary_resets_at,
+        },
+    )
+
+
 def collect_codex_stats() -> CodexStats:
     root = home() / ".codex" / "sessions"
     stats = CodexStats()
@@ -49,6 +97,9 @@ def collect_codex_stats() -> CodexStats:
     today = datetime.now(timezone.utc).date()
     seen_sessions: set[Path] = set()
     today_sessions: set[Path] = set()
+    latest_context_tokens = 0
+    latest_context_window: int | None = None
+    latest_context_ts: str | None = None
 
     paths = sorted(root.rglob("rollout-*.jsonl"), key=lambda p: p.stat().st_mtime, reverse=True)
 
@@ -64,13 +115,7 @@ def collect_codex_stats() -> CodexStats:
         session_cwd: str | None = None
         session_title: str | None = None
         session_at: datetime | None = None
-        session_primary: float | None = None
-        session_secondary: float | None = None
-        session_primary_reset: datetime | None = None
-        session_secondary_reset: datetime | None = None
-        session_plan: str | None = None
         session_active = False
-        last_rate_limits: dict[str, Any] | None = None
 
         for row in iter_jsonl(path):
             row_type = row.get("type")
@@ -97,16 +142,15 @@ def collect_codex_stats() -> CodexStats:
                 )
                 session_cached = max(session_cached, int(usage.get("cached_input_tokens") or 0))
                 session_total = max(session_total, int(usage.get("total_tokens") or 0))
-                limits = payload.get("rate_limits") or info.get("rate_limits") or {}
-                primary = limits.get("primary") or {}
-                secondary = limits.get("secondary") or {}
-                session_primary = float(primary.get("used_percent")) if primary.get("used_percent") is not None else session_primary
-                session_secondary = float(secondary.get("used_percent")) if secondary.get("used_percent") is not None else session_secondary
-                session_primary_reset = unix_ts(primary.get("resets_at")) or session_primary_reset
-                session_secondary_reset = unix_ts(secondary.get("resets_at")) or session_secondary_reset
-                session_plan = limits.get("plan_type") or session_plan
                 session_at = parse_iso(row.get("timestamp")) or session_at
-                last_rate_limits = limits or last_rate_limits
+
+                context_window = info.get("model_context_window")
+                if context_window and session_total:
+                    ts = str(row.get("timestamp") or "")
+                    if latest_context_ts is None or ts > latest_context_ts:
+                        latest_context_ts = ts
+                        latest_context_tokens = session_total
+                        latest_context_window = int(context_window)
 
             if row_type == "event_msg" and payload.get("type") == "task_started":
                 session_active = True
@@ -138,17 +182,21 @@ def collect_codex_stats() -> CodexStats:
             stats.latest_model = session_model
             stats.latest_cwd = session_cwd
             stats.latest_title = session_title
-            if last_rate_limits:
-                primary = last_rate_limits.get("primary") or {}
-                secondary = last_rate_limits.get("secondary") or {}
-                if primary.get("used_percent") is not None:
-                    stats.rate_primary_pct = float(primary["used_percent"])
-                if secondary.get("used_percent") is not None:
-                    stats.rate_secondary_pct = float(secondary["used_percent"])
-                stats.rate_primary_resets_at = unix_ts(primary.get("resets_at"))
-                stats.rate_secondary_resets_at = unix_ts(secondary.get("resets_at"))
-                stats.plan_type = last_rate_limits.get("plan_type")
 
     stats.today_sessions = len(today_sessions)
     stats.sessions = len(seen_sessions) if seen_sessions else stats.sessions
+    stats.context_window = latest_context_window
+    stats.context_used_tokens = latest_context_tokens or None
+
+    _apply_rate_limits(stats, _pick_latest_rate_limits(root))
+
+    if not stats.limits:
+        context = context_limit(
+            label="Session",
+            used_tokens=stats.context_used_tokens,
+            window_tokens=stats.context_window,
+        )
+        if context:
+            stats.limits.append(context)
+
     return stats

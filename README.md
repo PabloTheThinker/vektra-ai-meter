@@ -21,7 +21,8 @@ Installs into `~/.local/share/vektra-ai-meter/venv`, puts `ai-meter` on your PAT
 ## What you get
 
 - **Top-bar tray icon** in your panel status area (COSMIC, GNOME, KDE, Xfce)
-- **Click for detail** — Grok, Codex, and Claude breakdown
+- **Live quota percentages** — Codex 5h/7d limits, Grok context window (refreshes every 15s)
+- **Click for detail** — per-provider limits and token breakdown
 - **Autostart** on login
 - **Local snapshot** at `~/.local/share/vektra-ai-meter/snapshot.json`
 

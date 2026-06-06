@@ -11,14 +11,43 @@ from PySide6.QtWidgets import QApplication, QMenu, QSystemTrayIcon
 from .snapshot import write_snapshot
 from .util import fmt_tokens
 
-REFRESH_MS = 20_000
+REFRESH_MS = 15_000
 
 
 def _compact_label(snapshot: dict) -> str:
     summary = snapshot.get("summary") or {}
+    peak = summary.get("peak_percent_fmt")
+    if peak and peak != "—":
+        peak_label = summary.get("peak_label")
+        if peak_label:
+            return f"{peak_label} {peak}"
+        return f"Peak {peak}"
+
     total = summary.get("total_tokens_fmt", "—")
     active = summary.get("active_sessions", 0)
     return f"{total} · {active} active"
+
+
+def _provider_line(provider: dict) -> str:
+    parts: list[str] = []
+    limits = provider.get("limits") or []
+    if limits:
+        for limit in limits:
+            label = limit.get("label")
+            used = limit.get("used_percent")
+            if used is not None and label:
+                parts.append(f"{label} {used:.0f}%")
+            elif limit.get("detail") and label:
+                parts.append(f"{label} {limit['detail']}")
+    elif provider.get("limit_headline"):
+        parts.append(provider["limit_headline"])
+    else:
+        parts.append(fmt_tokens(provider.get("total_tokens")))
+
+    if provider.get("active_sessions"):
+        parts.append(f"{provider['active_sessions']} active")
+
+    return f"{provider.get('label')}: " + " · ".join(parts)
 
 
 class TopBarIndicator:
@@ -66,22 +95,19 @@ class TopBarIndicator:
         self.menu.clear()
 
         summary = snapshot.get("summary") or {}
-        header = QAction(
-            f"Total {summary.get('total_tokens_fmt', '—')} · "
-            f"{summary.get('active_sessions', 0)} active",
-            self.menu,
-        )
+        header_bits = []
+        if summary.get("peak_percent_fmt") and summary.get("peak_percent_fmt") != "—":
+            header_bits.append(f"Peak {summary['peak_percent_fmt']}")
+        else:
+            header_bits.append(f"Total {summary.get('total_tokens_fmt', '—')}")
+        header_bits.append(f"{summary.get('active_sessions', 0)} active")
+        header = QAction(" · ".join(header_bits), self.menu)
         header.setEnabled(False)
         self.menu.addAction(header)
         self.menu.addSeparator()
 
         for provider in snapshot.get("providers") or []:
-            parts = [f"{provider.get('label')}: {fmt_tokens(provider.get('total_tokens'))}"]
-            if provider.get("rate_primary") and provider["rate_primary"] != "—":
-                parts.append(f"5h {provider['rate_primary']}")
-            if provider.get("active_sessions"):
-                parts.append(f"{provider['active_sessions']} active")
-            item = QAction(" · ".join(parts), self.menu)
+            item = QAction(_provider_line(provider), self.menu)
             item.setEnabled(False)
             self.menu.addAction(item)
 
