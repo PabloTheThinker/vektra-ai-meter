@@ -1,0 +1,28 @@
+(defpoll ai_snapshot
+  :interval "20s"
+  :initial true
+  "python3 -c \"import json, pathlib, subprocess, os; p=pathlib.Path.home()/'.local/share/vektra-ai-meter/snapshot.json'; root=os.path.expanduser('~/.local/bin/ai-meter'); subprocess.run([root,'snapshot','--write'], check=False); print(p.read_text() if p.exists() else '{}')\"")
+
+(deflisten ai-data :initial "true" ai_snapshot)
+
+(defwidget provider-row [label tokens model rate]
+  (box :class "provider-row" :orientation "h" :space-evenly false :spacing 8
+    (label :class "provider-label" :text label :limit-width 80)
+    (label :class "provider-tokens" :text tokens)
+    (label :class "provider-model" :text model :limit-width 120)))
+
+(defwindow ai-tracker
+  :monitor 0
+  :geometry (geometry :x "24px" :y "80px" :width "320px" :height "360px" :anchor "top right")
+  :stacking "fg"
+  :focusable false
+  (box :class "ai-tracker" :orientation "v" :spacing 10
+    (label :class "title" :text "VEKTRA AI METER")
+    (label :class "subtitle" :text "Grok · Codex · Claude")
+    (box :class "summary" :orientation "h" :spacing 16
+      (label :class "summary-item" :text "Total: ${ai-data.summary.total_tokens_fmt}")
+      (label :class "summary-item" :text "Today: ${ai-data.summary.today_tokens_fmt}")
+      (label :class "summary-item" :text "Active: ${ai-data.summary.active_sessions}"))
+    (provider-row :label "Grok" :tokens "${ai-data.providers[0].total_tokens}" :model "${ai-data.providers[0].model}" :rate "")
+    (provider-row :label "Codex" :tokens "${ai-data.providers[1].total_tokens}" :model "${ai-data.providers[1].model}" :rate "${ai-data.providers[1].rate_primary}")
+    (provider-row :label "Claude" :tokens "${ai-data.providers[2].total_tokens}" :model "${ai-data.providers[2].model}" :rate "")))

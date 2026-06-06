@@ -1,0 +1,98 @@
+#!/usr/bin/env python3
+from __future__ import annotations
+
+import argparse
+import json
+import sys
+from pathlib import Path
+
+import os
+
+ROOT = Path(os.environ.get("VEKTRA_AI_METER_ROOT", Path(__file__).resolve().parents[1]))
+sys.path.insert(0, str(ROOT / "src"))
+
+from ai_tracker.snapshot import build_snapshot, write_snapshot  # noqa: E402
+from ai_tracker.util import snapshot_path  # noqa: E402
+
+
+def cmd_snapshot(args: argparse.Namespace) -> int:
+    snapshot = write_snapshot() if args.write else build_snapshot()
+    if args.pretty:
+        print(json.dumps(snapshot, indent=2, default=str))
+    else:
+        print(json.dumps(snapshot, default=str))
+    if args.write:
+        print(snapshot_path(), file=sys.stderr)
+    return 0
+
+
+def cmd_widget(args: argparse.Namespace) -> int:
+    from ai_tracker.widget_gtk import main as widget_main
+
+    return widget_main()
+
+
+def cmd_config(args: argparse.Namespace) -> int:
+    from ai_tracker.config import WidgetConfig
+
+    config = WidgetConfig().load()
+    if args.size:
+        config.size = args.size
+    if args.anchor:
+        config.anchor = args.anchor
+    if args.margin is not None:
+        config.margin = args.margin
+    if args.autostart is not None:
+        config.autostart = args.autostart == "true"
+    config.save()
+    print(json.dumps({
+        "size": config.size,
+        "anchor": config.anchor,
+        "margin": config.margin,
+        "autostart": config.autostart,
+        "desktop_mode": config.desktop_mode,
+        "path": str(config.path),
+    }, indent=2))
+    return 0
+
+
+def cmd_print(args: argparse.Namespace) -> int:
+    path = snapshot_path()
+    if not path.exists():
+        write_snapshot()
+    print(path.read_text(encoding="utf-8"))
+    return 0
+
+
+def main() -> int:
+    parser = argparse.ArgumentParser(description="Vektra AI Meter for Linux")
+    sub = parser.add_subparsers(dest="command", required=True)
+
+    snap = sub.add_parser("snapshot", help="Build usage snapshot JSON")
+    snap.add_argument(
+        "--write",
+        action="store_true",
+        help="Write ~/.local/share/vektra-ai-meter/snapshot.json",
+    )
+    snap.add_argument("--pretty", action="store_true")
+    snap.set_defaults(func=cmd_snapshot)
+
+    widget = sub.add_parser("widget", help="Launch the Vektra glance panel")
+    widget.set_defaults(func=cmd_widget)
+
+    cfg = sub.add_parser("config", help="View or update glance panel settings")
+    cfg.add_argument("--size", choices=["small", "medium", "large"])
+    cfg.add_argument("--anchor", choices=["top-left", "top-right", "bottom-left", "bottom-right"])
+    cfg.add_argument("--margin", type=int)
+    cfg.add_argument("--autostart", choices=["true", "false"])
+    cfg.set_defaults(func=cmd_config)
+
+    show = sub.add_parser("print", help="Print cached snapshot JSON")
+    show.set_defaults(func=cmd_print)
+
+    args = parser.parse_args()
+    return args.func(args)
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
