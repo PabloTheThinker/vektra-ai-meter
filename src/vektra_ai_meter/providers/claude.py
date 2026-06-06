@@ -7,6 +7,8 @@ from typing import Any
 
 from ..util import home, iter_jsonl, parse_iso
 
+MAX_CLAUDE_SCAN = 64
+
 
 @dataclass
 class ClaudeStats:
@@ -43,7 +45,8 @@ def collect_claude_stats() -> ClaudeStats:
 
     today = datetime.now(timezone.utc).date()
 
-    for session_path in root.rglob("*.jsonl"):
+    paths = sorted(root.rglob("*.jsonl"), key=lambda p: p.stat().st_mtime, reverse=True)
+    for session_path in paths[:MAX_CLAUDE_SCAN]:
         session_input = 0
         session_output = 0
         session_cache_create = 0

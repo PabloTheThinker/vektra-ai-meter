@@ -83,7 +83,12 @@ def run_popup_server() -> int:
             GLib.idle_add(self.popup.hide)
 
         def schedule_refresh(self) -> None:
-            GLib.idle_add(self.popup.refresh)
+            GLib.idle_add(self._refresh_if_visible)
+
+        def _refresh_if_visible(self) -> bool:
+            if self.popup.visible:
+                self.popup.refresh()
+            return False
 
         def do_activate(self) -> None:  # noqa: N802
             if self.popup.window is None:

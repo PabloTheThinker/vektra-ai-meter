@@ -1,5 +1,26 @@
 # Changelog
 
+## [2026-06-06] — Smooth panel + faster refresh (v0.3.3)
+
+### Fixed
+- Panel no longer freezes the tray — snapshot collection runs on a background thread.
+- Qt panel updates in-place instead of destroying/recreating widgets every 15s.
+- Removed expensive `QGraphicsDropShadowEffect` that caused repaint stutter.
+- Codex collector no longer double-scans all rollout logs; rate limits parsed in one pass.
+- Grok/Claude collectors use tail reads and cap recent file scans.
+
+### Changed
+- GTK integrated popup refreshes only when visible; skips rebuild when data unchanged.
+- Tray icon caches live bar overlays; footer "Updated Ns ago" ticks without full refresh.
+- Polished panel UX: provider badges, accent bars, hover states, smoother progress rows.
+
+### Verify
+```bash
+ai-meter update
+ai-meter status
+# Open tray panel — should feel smooth while scrolling and refreshing
+```
+
 ## [2026-06-06] — Installer git sync fix (v0.3.2)
 
 ### Fixed

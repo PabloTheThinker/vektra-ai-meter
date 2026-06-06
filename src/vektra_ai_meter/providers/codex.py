@@ -8,6 +8,8 @@ from typing import Any
 from ..limits import UsageLimit, context_limit, has_window_limits, parse_codex_rate_limits
 from ..util import home, iter_jsonl, parse_iso, unix_ts
 
+MAX_CODEX_FULL_PARSE = 42
+
 
 @dataclass
 class CodexStats:
@@ -44,26 +46,19 @@ def _session_title(payload: dict[str, Any]) -> str | None:
     return meta.get("id")
 
 
-def _pick_latest_rate_limits(root: Path) -> dict[str, Any] | None:
-    best_ts: str | None = None
-    best_limits: dict[str, Any] | None = None
-
-    for path in root.rglob("rollout-*.jsonl"):
-        for row in iter_jsonl(path):
-            if row.get("type") != "event_msg":
-                continue
-            payload = row.get("payload") or {}
-            if payload.get("type") != "token_count":
-                continue
-            limits = payload.get("rate_limits") or (payload.get("info") or {}).get("rate_limits")
-            if not limits or not has_window_limits(limits):
-                continue
-            ts = str(row.get("timestamp") or "")
-            if best_ts is None or ts > best_ts:
-                best_ts = ts
-                best_limits = limits
-
-    return best_limits
+def _note_rate_limits(
+    payload: dict[str, Any],
+    row_ts: str,
+    *,
+    best_ts: str | None,
+    best_limits: dict[str, Any] | None,
+) -> tuple[str | None, dict[str, Any] | None]:
+    limits = payload.get("rate_limits") or (payload.get("info") or {}).get("rate_limits")
+    if not limits or not has_window_limits(limits):
+        return best_ts, best_limits
+    if best_ts is None or row_ts > best_ts:
+        return row_ts, limits
+    return best_ts, best_limits
 
 
 def _apply_rate_limits(stats: CodexStats, limits: dict[str, Any] | None) -> None:
@@ -102,8 +97,11 @@ def collect_codex_stats() -> CodexStats:
     latest_context_ts: str | None = None
 
     paths = sorted(root.rglob("rollout-*.jsonl"), key=lambda p: p.stat().st_mtime, reverse=True)
+    stats.sessions = len(paths)
+    best_rate_ts: str | None = None
+    best_rate_limits: dict[str, Any] | None = None
 
-    for path in paths:
+    for path in paths[:MAX_CODEX_FULL_PARSE]:
         seen_sessions.add(path)
         file_mtime = datetime.fromtimestamp(path.stat().st_mtime, tz=timezone.utc)
         session_input = 0
@@ -144,9 +142,16 @@ def collect_codex_stats() -> CodexStats:
                 session_total = max(session_total, int(usage.get("total_tokens") or 0))
                 session_at = parse_iso(row.get("timestamp")) or session_at
 
+                ts = str(row.get("timestamp") or "")
+                best_rate_ts, best_rate_limits = _note_rate_limits(
+                    payload,
+                    ts,
+                    best_ts=best_rate_ts,
+                    best_limits=best_rate_limits,
+                )
+
                 context_window = info.get("model_context_window")
                 if context_window and session_total:
-                    ts = str(row.get("timestamp") or "")
                     if latest_context_ts is None or ts > latest_context_ts:
                         latest_context_ts = ts
                         latest_context_tokens = session_total
@@ -164,7 +169,6 @@ def collect_codex_stats() -> CodexStats:
         if (datetime.now(timezone.utc) - file_mtime).total_seconds() < 3600:
             recent = True
 
-        stats.sessions += 1
         if session_active and recent:
             stats.active_sessions += 1
         stats.input_tokens += session_input
@@ -184,11 +188,10 @@ def collect_codex_stats() -> CodexStats:
             stats.latest_title = session_title
 
     stats.today_sessions = len(today_sessions)
-    stats.sessions = len(seen_sessions) if seen_sessions else stats.sessions
     stats.context_window = latest_context_window
     stats.context_used_tokens = latest_context_tokens or None
 
-    _apply_rate_limits(stats, _pick_latest_rate_limits(root))
+    _apply_rate_limits(stats, best_rate_limits)
 
     if not stats.limits:
         context = context_limit(

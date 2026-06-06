@@ -7,7 +7,7 @@ from pathlib import Path
 from typing import Any
 
 from ..limits import UsageLimit, context_limit, limit_from_window
-from ..util import home, iter_jsonl, parse_iso
+from ..util import home, iter_jsonl, iter_jsonl_tail, parse_iso
 
 
 @dataclass
@@ -38,7 +38,7 @@ def _read_summary(path: Path) -> dict[str, Any]:
 
 def _session_tokens(updates_path: Path) -> int:
     peak = 0
-    for row in iter_jsonl(updates_path):
+    for row in iter_jsonl_tail(updates_path):
         meta = row.get("_meta") or {}
         params = row.get("params") or {}
         nested = params.get("_meta") or {}
@@ -47,10 +47,6 @@ def _session_tokens(updates_path: Path) -> int:
             if isinstance(total, (int, float)):
                 peak = max(peak, int(total))
     return peak
-
-
-def _read_summary_tokens(updates_path: Path) -> int:
-    return _session_tokens(updates_path)
 
 
 def _read_signals(summary_path: Path) -> dict[str, Any]:
@@ -113,7 +109,7 @@ def collect_grok_stats() -> GrokStats:
         stats.messages += messages
 
         updates_path = summary_path.parent / "updates.jsonl"
-        session_tokens = _read_summary_tokens(updates_path) if updates_path.exists() else 0
+        session_tokens = _session_tokens(updates_path) if updates_path.exists() else 0
         stats.estimated_tokens += session_tokens
 
         if session_at and (datetime.now(timezone.utc) - session_at).total_seconds() < 3600:

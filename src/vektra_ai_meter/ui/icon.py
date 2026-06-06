@@ -9,6 +9,7 @@ from PySide6.QtGui import QColor, QIcon, QImage, QPainter, QPixmap
 from .theme import usage_color
 
 _ICON_CACHE: dict[int, QPixmap] = {}
+_LIVE_ICON_CACHE: dict[tuple[float | None, ...], QIcon] = {}
 
 
 def _asset_path(size: int) -> Path | None:
@@ -39,6 +40,13 @@ def _brand_pixmap(size: int) -> QPixmap | None:
     pixmap = QPixmap.fromImage(image)
     _ICON_CACHE[size] = pixmap
     return pixmap
+
+
+def _bar_key(bars: list[float | None] | None) -> tuple[float | None, ...]:
+    values = list(bars or [])
+    while len(values) < 3:
+        values.append(None)
+    return tuple(round(value, 1) if value is not None else None for value in values[:3])
 
 
 def _draw_bars(painter: QPainter, size: int, bars: list[float | None]) -> None:
@@ -75,6 +83,10 @@ def make_tray_icon(bars: list[float | None] | None = None) -> QIcon:
     if brand is not None and not has_live:
         return QIcon(brand)
 
+    key = _bar_key(bars)
+    if key in _LIVE_ICON_CACHE:
+        return _LIVE_ICON_CACHE[key]
+
     pixmap = QPixmap(size, size)
     pixmap.fill(Qt.GlobalColor.transparent)
     painter = QPainter(pixmap)
@@ -87,4 +99,9 @@ def make_tray_icon(bars: list[float | None] | None = None) -> QIcon:
 
     _draw_bars(painter, size, bars or [])
     painter.end()
-    return QIcon(pixmap)
+
+    icon = QIcon(pixmap)
+    _LIVE_ICON_CACHE[key] = icon
+    if len(_LIVE_ICON_CACHE) > 48:
+        _LIVE_ICON_CACHE.pop(next(iter(_LIVE_ICON_CACHE)))
+    return icon

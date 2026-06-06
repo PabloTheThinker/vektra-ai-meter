@@ -7,7 +7,7 @@ import sys
 import time
 from pathlib import Path
 
-from PySide6.QtCore import QTimer
+from PySide6.QtCore import QObject, QRunnable, QThreadPool, QTimer, Signal, Slot
 from PySide6.QtWidgets import QApplication, QSystemTrayIcon
 
 from .autostart import ensure_running_or_exit
@@ -19,8 +19,10 @@ from .snapshot import write_snapshot
 from .ui.icon import make_tray_icon
 from .ui.panel import UsagePanel
 from .ui.wayland import ClickAwayFilter, is_wayland
+from .util import snapshot_display_digest
 
 REFRESH_MS = 15_000
+FOOTER_TICK_MS = 1_000
 
 
 def _rich_tooltip(snapshot: dict) -> str:
@@ -80,6 +82,23 @@ def _integrated_mode() -> bool:
     return is_wayland() and layer_shell_available()
 
 
+class SnapshotSignals(QObject):
+    finished = Signal(dict)
+    failed = Signal(str)
+
+
+class SnapshotTask(QRunnable):
+    def __init__(self, signals: SnapshotSignals) -> None:
+        super().__init__()
+        self.signals = signals
+
+    def run(self) -> None:
+        try:
+            self.signals.finished.emit(write_snapshot())
+        except Exception as exc:  # noqa: BLE001 — surface collector failures in tray tooltip
+            self.signals.failed.emit(str(exc))
+
+
 class TopBarIndicator:
     def __init__(self) -> None:
         self._lock = ensure_running_or_exit()
@@ -111,9 +130,22 @@ class TopBarIndicator:
 
         self.tray.activated.connect(self._on_activated)
 
+        self._refreshing = False
+        self._last_snapshot: dict | None = None
+        self._last_digest: str | None = None
+        self._pool = QThreadPool.globalInstance()
+        self._signals = SnapshotSignals()
+        self._signals.finished.connect(self._apply_snapshot)
+        self._signals.failed.connect(self._on_refresh_failed)
+
         self.timer = QTimer()
         self.timer.timeout.connect(self._refresh)
         self.timer.start(REFRESH_MS)
+
+        self.footer_timer = QTimer()
+        self.footer_timer.timeout.connect(self._tick_footer)
+        self.footer_timer.start(FOOTER_TICK_MS)
+
         self._refresh()
 
         self.tray.setIcon(make_tray_icon())
@@ -158,16 +190,45 @@ class TopBarIndicator:
         if self.panel.isVisible():
             self.panel.hide()
         else:
+            if self._last_snapshot is not None:
+                self.panel.set_snapshot(self._last_snapshot, digest=self._last_digest)
             self.panel.popup_near_tray(self.tray)
 
-    def _refresh(self) -> None:
-        snapshot = write_snapshot()
+    @Slot(str)
+    def _on_refresh_failed(self, message: str) -> None:
+        self._refreshing = False
+        if self.panel is not None:
+            self.panel.set_refreshing(False)
+        self.tray.setToolTip(f"Vektra AI Meter\nRefresh failed: {message}")
+
+    @Slot(dict)
+    def _apply_snapshot(self, snapshot: dict) -> None:
+        self._refreshing = False
+        self._last_snapshot = snapshot
+        digest = snapshot_display_digest(snapshot)
+        self._last_digest = digest
+
         self.tray.setToolTip(_rich_tooltip(snapshot))
         self.tray.setIcon(make_tray_icon(_icon_bars(snapshot)))
+
         if self.integrated:
             refresh_popup()
         elif self.panel is not None:
-            self.panel.set_snapshot(snapshot)
+            self.panel.set_refreshing(False)
+            if self.panel.isVisible():
+                self.panel.set_snapshot(snapshot, digest=digest)
+
+    def _tick_footer(self) -> None:
+        if self.panel is not None and self.panel.isVisible():
+            self.panel.tick_footer()
+
+    def _refresh(self) -> None:
+        if self._refreshing:
+            return
+        self._refreshing = True
+        if self.panel is not None and self.panel.isVisible():
+            self.panel.set_refreshing(True)
+        self._pool.start(SnapshotTask(self._signals))
 
     def run(self) -> int:
         return self.app.exec()
