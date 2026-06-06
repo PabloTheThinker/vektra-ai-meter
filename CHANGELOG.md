@@ -1,5 +1,15 @@
 # Changelog
 
+## [2026-06-06] — Generated tray icon + top-bar dropdown integration (v0.2.9)
+
+### Added
+- Generated Vektra tray icon assets (`tray-icon-22/32/64.png`) bundled with the package.
+- `VEKTRA_TOP_BAR_HEIGHT` env var (default `36`) to align dropdown under your panel.
+
+### Fixed
+- Panel uses `Qt.Tool` surface flags — drops from top bar instead of opening as a separate app window.
+- Dropdown anchors flush under the status area / tray icon on Wayland (COSMIC).
+
 ## [2026-06-06] — CodexBar-inspired panel polish (v0.2.8)
 
 ### Changed

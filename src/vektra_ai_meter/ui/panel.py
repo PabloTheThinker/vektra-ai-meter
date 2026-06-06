@@ -29,10 +29,9 @@ from .theme import (
     PANEL_WIDTH,
     provider_style,
     usage_color,
-    usage_state,
     window_title,
 )
-from .wayland import show_panel_near_tray
+from .wayland import apply_dropdown_window_flags, show_panel_near_tray
 
 CARET_HEIGHT = 11
 
@@ -316,17 +315,11 @@ class UsagePanel(QWidget):
 
     def __init__(self) -> None:
         super().__init__()
-        self.setWindowFlags(
-            Qt.WindowType.Window
-            | Qt.WindowType.FramelessWindowHint
-            | Qt.WindowType.WindowStaysOnTopHint
-        )
-        self.setAttribute(Qt.WidgetAttribute.WA_ShowWithoutActivating, True)
-        self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground, True)
+        apply_dropdown_window_flags(self)
         self.setFixedWidth(PANEL_WIDTH)
 
         shell = QVBoxLayout(self)
-        shell.setContentsMargins(12, 0, 12, 12)
+        shell.setContentsMargins(8, 0, 8, 0)
         shell.setSpacing(0)
 
         self.caret = DropdownCaret()
@@ -343,9 +336,9 @@ class UsagePanel(QWidget):
             "}}"
         )
         shadow = QGraphicsDropShadowEffect(self.body)
-        shadow.setBlurRadius(28)
-        shadow.setOffset(0, 10)
-        shadow.setColor(QColor(0, 0, 0, 110))
+        shadow.setBlurRadius(16)
+        shadow.setOffset(0, 4)
+        shadow.setColor(QColor(0, 0, 0, 70))
         self.body.setGraphicsEffect(shadow)
         shell.addWidget(self.body)
 

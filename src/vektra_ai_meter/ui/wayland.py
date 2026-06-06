@@ -13,6 +13,14 @@ def is_wayland() -> bool:
     return session == "wayland" or bool(os.environ.get("WAYLAND_DISPLAY"))
 
 
+def top_bar_height() -> int:
+    raw = os.environ.get("VEKTRA_TOP_BAR_HEIGHT", "36")
+    try:
+        return max(24, min(64, int(raw)))
+    except ValueError:
+        return 36
+
+
 def tray_anchor_rect(tray: QSystemTrayIcon) -> QRect:
     geo = tray.geometry()
     if geo.isValid() and geo.width() > 0 and geo.height() > 0:
@@ -20,10 +28,11 @@ def tray_anchor_rect(tray: QSystemTrayIcon) -> QRect:
 
     screen = QApplication.primaryScreen()
     if screen is None:
-        return QRect(100, 100, 1, 1)
+        return QRect(100, 0, 24, 24)
 
-    available = screen.availableGeometry()
-    return QRect(available.right() - 48, available.top() + 4, 24, 24)
+    full = screen.geometry()
+    bar_h = top_bar_height()
+    return QRect(full.right() - 40, full.top() + max(0, (bar_h - 24) // 2), 24, 24)
 
 
 def _tray_geometry_known(tray: QSystemTrayIcon) -> bool:
@@ -32,33 +41,44 @@ def _tray_geometry_known(tray: QSystemTrayIcon) -> bool:
 
 
 def panel_origin(tray: QSystemTrayIcon, panel_width: int, panel_height: int) -> tuple[QPoint, int]:
-    """Return dropdown position and caret offset (x within panel)."""
+    """Anchor dropdown flush under the top panel / tray icon."""
     anchor = tray_anchor_rect(tray)
     screen = QApplication.primaryScreen()
-    available = screen.availableGeometry() if screen else QRect(0, 0, 1920, 1080)
+    full = screen.geometry() if screen else QRect(0, 0, 1920, 1080)
+    bar_h = top_bar_height()
 
     if _tray_geometry_known(tray):
         center_x = anchor.center().x()
         x = center_x - panel_width // 2
-        y = anchor.bottom() + 2
+        y = anchor.bottom() + 1
         caret_x = center_x - x
     else:
-        x = available.right() - PANEL_WIDTH - 14
-        y = available.top() + 6
-        caret_x = PANEL_WIDTH - 40
+        x = full.right() - panel_width - 10
+        y = full.top() + bar_h
+        caret_x = panel_width - 32
 
-    if y + panel_height > available.bottom():
-        y = max(available.top() + 6, anchor.y() - panel_height - 4)
-        caret_x = panel_width - 36
-
-    x = min(max(available.left() + 8, x), available.right() - panel_width - 8)
-    y = min(max(available.top() + 4, y), available.bottom() - panel_height - 8)
-    caret_x = max(18, min(panel_width - 18, caret_x))
+    x = min(max(full.left() + 6, x), full.right() - panel_width - 6)
+    y = max(full.top() + bar_h, y)
+    caret_x = max(20, min(panel_width - 20, caret_x))
     return QPoint(x, y), caret_x
 
 
+def apply_dropdown_window_flags(panel: QWidget) -> None:
+    """Tool surface that stays attached to the top bar — not a normal app window."""
+    panel.setWindowFlags(
+        Qt.WindowType.Tool
+        | Qt.WindowType.FramelessWindowHint
+        | Qt.WindowType.WindowStaysOnTopHint
+        | Qt.WindowType.WindowDoesNotAcceptFocus
+    )
+    panel.setAttribute(Qt.WidgetAttribute.WA_ShowWithoutActivating, True)
+    panel.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground, True)
+    panel.setAttribute(Qt.WidgetAttribute.WA_X11DoNotAcceptFocus, True)
+
+
 def show_panel_near_tray(panel: QWidget, tray: QSystemTrayIcon) -> None:
-    """Drop the usage panel down from the top-bar tray icon."""
+    """Drop the usage panel from the top-bar tray — integrated, not a separate app window."""
+    apply_dropdown_window_flags(panel)
     panel.adjustSize()
     origin, caret_x = panel_origin(tray, panel.width(), panel.height())
     if hasattr(panel, "caret"):
@@ -66,8 +86,6 @@ def show_panel_near_tray(panel: QWidget, tray: QSystemTrayIcon) -> None:
     panel.move(origin)
     panel.show()
     panel.raise_()
-    if not is_wayland():
-        panel.activateWindow()
 
 
 class ClickAwayFilter(QObject):

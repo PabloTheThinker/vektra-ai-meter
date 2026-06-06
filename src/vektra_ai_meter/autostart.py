@@ -74,6 +74,7 @@ def _systemd_content() -> str:
         "[Service]\n"
         "Type=simple\n"
         f"ExecStart={exec_path} run\n"
+        "Environment=VEKTRA_TOP_BAR_HEIGHT=36\n"
         "Restart=on-failure\n"
         "RestartSec=8\n"
         "\n"
