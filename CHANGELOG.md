@@ -1,5 +1,19 @@
 # Changelog
 
+## [2026-06-06] — fix panel not reopening after click-away (v0.3.8)
+
+### Fixed
+- Tray click now always sends `show` instead of `toggle`, so a compositor-dismissed panel (click-away) no longer leaves internal state stuck "open".
+- Popup syncs `visible` from GTK `notify::visible` when the layer-shell surface is hidden externally.
+- `toggle()` and `show()` base open/close on actual `window.get_visible()`, not a stale flag.
+- Show is deferred to the GTK main loop via `idle_add` so layer-shell remap is reliable after hide.
+
+### Verify
+```bash
+ai-meter update
+# Open panel → click away to close → click tray icon (should reopen)
+```
+
 ## [2026-06-06] — popup reopen + live Claude sessions (v0.3.7)
 
 ### Fixed

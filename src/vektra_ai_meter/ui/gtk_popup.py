@@ -14,7 +14,8 @@ import gi
 
 gi.require_version("Gtk", "4.0")
 gi.require_version("Gtk4LayerShell", "1.0")
-from gi.repository import GLib, Gtk, Gtk4LayerShell  # noqa: E402
+gi.require_version("GObject", "2.0")
+from gi.repository import GLib, GObject, Gtk, Gtk4LayerShell  # noqa: E402
 
 from .theme import (  # noqa: E402
     BG,
@@ -208,6 +209,23 @@ class IntegratedPopup:
         self._generated_at: str | None = None
         self._footer_timer_id: int | None = None
         self._refresh_btn: Gtk.Button | None = None
+        self._show_generation = 0
+
+    def _is_mapped(self) -> bool:
+        if self.window is None:
+            return False
+        return bool(self.window.get_visible())
+
+    def _sync_hidden(self) -> None:
+        self.visible = False
+        self._stop_footer_timer()
+        if self.backdrop is not None:
+            self.backdrop.set_visible(False)
+
+    def _on_window_visible(self, _window: Gtk.Window, _pspec: GObject.GParam) -> None:
+        if self._is_mapped():
+            return
+        self._sync_hidden()
 
     def build(self) -> Gtk.Window:
         provider = Gtk.CssProvider()
@@ -237,6 +255,7 @@ class IntegratedPopup:
         key = Gtk.EventControllerKey()
         key.connect("key-pressed", self._on_key)
         win.add_controller(key)
+        win.connect("notify::visible", self._on_window_visible)
 
         root = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=0)
         root.add_css_class("vektra-root")
@@ -588,29 +607,44 @@ class IntegratedPopup:
             self.footer_label.set_text(ago_label(self._generated_at))
         return True
 
-    def show(self) -> None:
-        if self.window is None:
-            return
-        self.refresh(force=True)
+    def _present_windows(self, generation: int) -> bool:
+        if generation != self._show_generation or self.window is None:
+            return False
+
         backdrop = self._ensure_backdrop()
         backdrop.set_visible(True)
         self.window.set_visible(True)
+        Gtk4LayerShell.set_keyboard_mode(self.window, Gtk4LayerShell.KeyboardMode.ON_DEMAND)
         self.window.present()
         self.visible = True
         self._start_footer_timer()
         threading.Thread(target=self._collect_and_refresh, daemon=True).start()
+        return False
+
+    def show(self) -> None:
+        if self.window is None:
+            return
+
+        self.refresh(force=True)
+        if self._is_mapped():
+            self.visible = True
+            self._start_footer_timer()
+            threading.Thread(target=self._collect_and_refresh, daemon=True).start()
+            return
+
+        self._show_generation += 1
+        generation = self._show_generation
+        GLib.idle_add(self._present_windows, generation)
 
     def hide(self) -> None:
         if self.window is None:
             return
-        self.visible = False
-        self._stop_footer_timer()
-        if self.backdrop is not None:
-            self.backdrop.set_visible(False)
+        self._show_generation += 1
+        self._sync_hidden()
         self.window.set_visible(False)
 
     def toggle(self) -> None:
-        if self.visible:
+        if self._is_mapped():
             self.hide()
         else:
             self.show()

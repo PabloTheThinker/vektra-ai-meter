@@ -12,7 +12,7 @@ from PySide6.QtWidgets import QApplication, QSystemTrayIcon
 
 from .autostart import ensure_running_or_exit
 from .gtk_launch import popup_server_argv, popup_server_env
-from .ipc import popup_server_running, refresh_popup, toggle_popup
+from .ipc import popup_server_running, refresh_popup, show_popup
 from .layershell import layer_shell_available
 from .paths import venv_ai_meter
 from .snapshot import write_snapshot
@@ -180,10 +180,10 @@ class TopBarIndicator:
             if not popup_server_running():
                 self._ensure_popup_server()
             self._refresh()
-            if not toggle_popup():
+            if not show_popup():
                 self._ensure_popup_server()
                 time.sleep(0.15)
-                toggle_popup()
+                show_popup()
             return
 
         if self.panel is None:
