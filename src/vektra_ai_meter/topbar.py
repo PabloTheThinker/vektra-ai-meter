@@ -12,7 +12,7 @@ from PySide6.QtWidgets import QApplication, QSystemTrayIcon
 
 from .autostart import ensure_running_or_exit
 from .gtk_launch import popup_server_argv, popup_server_env
-from .ipc import popup_server_running, refresh_popup, show_popup
+from .ipc import PID_PATH, SOCKET_PATH, popup_server_running, refresh_popup, show_popup
 from .layershell import layer_shell_available
 from .paths import venv_ai_meter
 from .snapshot import write_snapshot
@@ -151,9 +151,22 @@ class TopBarIndicator:
         self.tray.setIcon(make_tray_icon())
         self.tray.show()
 
-    def _ensure_popup_server(self) -> None:
-        if popup_server_running():
+    def _ensure_popup_server(self, *, force: bool = False) -> None:
+        if not force and popup_server_running():
             return
+        if force:
+            import os
+
+            try:
+                pid = int(PID_PATH.read_text(encoding="utf-8").strip())
+                os.kill(pid, 15)
+            except (OSError, ValueError, ProcessLookupError):
+                pass
+            try:
+                PID_PATH.unlink(missing_ok=True)
+                SOCKET_PATH.unlink(missing_ok=True)
+            except OSError:
+                pass
         launcher = _launcher()
         if not launcher.is_file():
             return
@@ -181,7 +194,7 @@ class TopBarIndicator:
                 self._ensure_popup_server()
             self._refresh()
             if not show_popup():
-                self._ensure_popup_server()
+                self._ensure_popup_server(force=True)
                 time.sleep(0.15)
                 show_popup()
             return

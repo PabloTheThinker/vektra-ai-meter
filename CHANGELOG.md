@@ -1,5 +1,19 @@
 # Changelog
 
+## [2026-06-06] — popup server survives hide / click-away (v0.3.9)
+
+### Fixed
+- **Root cause:** `set_visible(False)` on layer-shell overlay windows crashed the GTK popup server (zombie PID, dead socket). Panel now hides via CSS opacity + `can_target(False)` while keeping surfaces mapped.
+- `PopupApp.hold()` keeps the GTK application alive as a safety net.
+- `popup_server_running()` now requires a live PID (not zombie) **and** a responsive Unix socket.
+- Tray restarts the popup server forcibly when `show` IPC fails instead of trusting a stale PID file.
+
+### Verify
+```bash
+ai-meter update
+# Open → click away → click tray (panel reopens; popup.pid process stays alive, not Z)
+```
+
 ## [2026-06-06] — fix panel not reopening after click-away (v0.3.8)
 
 ### Fixed

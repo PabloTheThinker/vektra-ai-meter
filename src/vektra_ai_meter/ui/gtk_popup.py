@@ -14,8 +14,7 @@ import gi
 
 gi.require_version("Gtk", "4.0")
 gi.require_version("Gtk4LayerShell", "1.0")
-gi.require_version("GObject", "2.0")
-from gi.repository import GLib, GObject, Gtk, Gtk4LayerShell  # noqa: E402
+from gi.repository import GLib, Gtk, Gtk4LayerShell  # noqa: E402
 
 from .theme import (  # noqa: E402
     BG,
@@ -30,6 +29,8 @@ from .theme import (  # noqa: E402
     usage_color,
     window_title,
 )
+
+_HIDDEN_CLASS = "vektra-layer-hidden"
 
 CSS = f"""
 window.vektra-popup {{
@@ -125,6 +126,9 @@ window.vektra-popup {{
 .vektra-backdrop {{
   background-color: rgba(0, 0, 0, 0.01);
 }}
+window.vektra-layer-hidden {{
+  opacity: 0;
+}}
 progressbar.vektra-bar progress {{
   background-color: #22c55e;
   border-radius: 4px;
@@ -211,21 +215,20 @@ class IntegratedPopup:
         self._refresh_btn: Gtk.Button | None = None
         self._show_generation = 0
 
-    def _is_mapped(self) -> bool:
+    def _is_open(self) -> bool:
+        return self.visible
+
+    def _set_layer_open(self, open_: bool) -> None:
         if self.window is None:
-            return False
-        return bool(self.window.get_visible())
-
-    def _sync_hidden(self) -> None:
-        self.visible = False
-        self._stop_footer_timer()
-        if self.backdrop is not None:
-            self.backdrop.set_visible(False)
-
-    def _on_window_visible(self, _window: Gtk.Window, _pspec: GObject.GParam) -> None:
-        if self._is_mapped():
             return
-        self._sync_hidden()
+        backdrop = self._ensure_backdrop()
+        for widget in (backdrop, self.window):
+            if open_:
+                widget.remove_css_class(_HIDDEN_CLASS)
+                widget.set_can_target(True)
+            else:
+                widget.add_css_class(_HIDDEN_CLASS)
+                widget.set_can_target(False)
 
     def build(self) -> Gtk.Window:
         provider = Gtk.CssProvider()
@@ -255,7 +258,6 @@ class IntegratedPopup:
         key = Gtk.EventControllerKey()
         key.connect("key-pressed", self._on_key)
         win.add_controller(key)
-        win.connect("notify::visible", self._on_window_visible)
 
         root = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=0)
         root.add_css_class("vektra-root")
@@ -310,6 +312,7 @@ class IntegratedPopup:
 
         self.window = win
         self._ensure_backdrop()
+        self._set_layer_open(False)
         return win
 
     def _ensure_backdrop(self) -> Gtk.Window:
@@ -611,9 +614,7 @@ class IntegratedPopup:
         if generation != self._show_generation or self.window is None:
             return False
 
-        backdrop = self._ensure_backdrop()
-        backdrop.set_visible(True)
-        self.window.set_visible(True)
+        self._set_layer_open(True)
         Gtk4LayerShell.set_keyboard_mode(self.window, Gtk4LayerShell.KeyboardMode.ON_DEMAND)
         self.window.present()
         self.visible = True
@@ -626,8 +627,7 @@ class IntegratedPopup:
             return
 
         self.refresh(force=True)
-        if self._is_mapped():
-            self.visible = True
+        if self._is_open():
             self._start_footer_timer()
             threading.Thread(target=self._collect_and_refresh, daemon=True).start()
             return
@@ -640,11 +640,12 @@ class IntegratedPopup:
         if self.window is None:
             return
         self._show_generation += 1
-        self._sync_hidden()
-        self.window.set_visible(False)
+        self.visible = False
+        self._stop_footer_timer()
+        self._set_layer_open(False)
 
     def toggle(self) -> None:
-        if self._is_mapped():
+        if self._is_open():
             self.hide()
         else:
             self.show()

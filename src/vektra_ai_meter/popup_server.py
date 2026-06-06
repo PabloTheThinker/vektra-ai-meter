@@ -91,9 +91,11 @@ def run_popup_server() -> int:
             return False
 
         def do_activate(self) -> None:  # noqa: N802
+            # Stay alive when every layer-shell surface is hidden (click-away / close).
+            self.hold()
+
             if self.popup.window is None:
                 self.popup.build()
-                self.popup.window.set_visible(False)
 
             PID_PATH.write_text(str(os.getpid()), encoding="utf-8")
             listener = threading.Thread(

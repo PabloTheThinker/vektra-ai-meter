@@ -23,20 +23,47 @@ def send_command(command: str) -> bool:
         return False
 
 
-def popup_server_running() -> bool:
-    if not PID_PATH.exists():
-        return SOCKET_PATH.exists()
+def _socket_responsive() -> bool:
+    if not SOCKET_PATH.exists():
+        return False
     try:
-        pid = int(PID_PATH.read_text(encoding="utf-8").strip())
-    except (OSError, ValueError):
-        return SOCKET_PATH.exists()
+        with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as client:
+            client.settimeout(0.4)
+            client.connect(str(SOCKET_PATH))
+            client.sendall(b"refresh\n")
+            return True
+    except OSError:
+        return False
+
+
+def _pid_alive(pid: int) -> bool:
     try:
         import os
 
         os.kill(pid, 0)
-        return True
     except OSError:
         return False
+
+    try:
+        stat = (Path("/proc") / str(pid) / "stat").read_text(encoding="utf-8")
+        state = stat.split(")", 1)[1].split()[0]
+        if state == "Z":
+            return False
+    except (OSError, IndexError):
+        pass
+    return True
+
+
+def popup_server_running() -> bool:
+    if not PID_PATH.exists():
+        return _socket_responsive()
+    try:
+        pid = int(PID_PATH.read_text(encoding="utf-8").strip())
+    except (OSError, ValueError):
+        return _socket_responsive()
+    if not _pid_alive(pid):
+        return False
+    return _socket_responsive()
 
 
 def toggle_popup() -> bool:
