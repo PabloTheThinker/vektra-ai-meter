@@ -33,11 +33,12 @@ After install, the meter starts automatically — you do not need to run `ai-met
 
 ```bash
 ai-meter status
+ai-meter reboot       # restart the top-bar indicator
 ai-meter update
 ai-meter snapshot --write --pretty
 ai-meter print
 ai-meter config --autostart true
-ai-meter run          # only if autostart is off or you need to restart manually
+ai-meter run          # only if autostart is off
 ```
 
 ### Update without reinstalling

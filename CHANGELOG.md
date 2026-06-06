@@ -1,5 +1,13 @@
 # Changelog
 
+## [2026-06-06] — `ai-meter reboot` command
+
+### Added
+- `ai-meter reboot` — restarts the top-bar indicator via systemd (or direct launch fallback).
+
+### Changed
+- `ai-meter update` restart path now uses the shared reboot logic.
+
 ## [2026-06-06] — Linux top-bar parity: autostart, limits UX, Wayland panel
 
 ### Added

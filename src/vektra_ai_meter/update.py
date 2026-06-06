@@ -11,7 +11,6 @@ from .paths import (
     app_dir,
     default_branch,
     default_repo_url,
-    venv_ai_meter,
     venv_dir,
     venv_pip,
 )
@@ -58,19 +57,9 @@ def _pip_upgrade(app: Path, pip: Path) -> None:
 
 
 def _restart_topbar() -> None:
-    meter = venv_ai_meter()
-    if meter.is_file():
-        subprocess.run(["pkill", "-f", str(meter)], check=False)
-    ai_meter = Path.home() / ".local" / "bin" / "ai-meter"
-    launcher = str(ai_meter if ai_meter.is_file() else meter)
-    if not Path(launcher).is_file():
-        return
-    subprocess.Popen(
-        [launcher, "run"],
-        stdout=subprocess.DEVNULL,
-        stderr=subprocess.DEVNULL,
-        start_new_session=True,
-    )
+    from .autostart import reboot_panel
+
+    reboot_panel()
 
 
 def run_update(*, restart: bool = True) -> int:

@@ -1,10 +1,10 @@
 from __future__ import annotations
 
 import fcntl
-import json
 import os
 import subprocess
 import sys
+import time
 from dataclasses import dataclass
 from pathlib import Path
 from typing import IO
@@ -222,6 +222,59 @@ def status_dict() -> dict:
         "desktop_path": str(autostart_desktop_path()),
         "systemd_path": str(systemd_unit_path()),
     }
+
+
+def _stop_panel() -> None:
+    meter = venv_ai_meter()
+    patterns = [str(ai_meter_bin())]
+    if meter.is_file() and meter != ai_meter_bin():
+        patterns.append(str(meter))
+
+    for pattern in patterns:
+        subprocess.run(["pkill", "-f", f"{pattern} run"], check=False)
+
+    try:
+        lock_path().unlink(missing_ok=True)
+    except OSError:
+        pass
+
+
+def _start_panel() -> None:
+    launcher = ai_meter_bin()
+    if not launcher.is_file():
+        return
+    subprocess.Popen(
+        [str(launcher), "run"],
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+        start_new_session=True,
+    )
+
+
+def reboot_panel(*, wait: bool = True) -> ServiceStatus:
+    """Stop and restart the top-bar indicator."""
+    had_systemd = systemd_unit_path().is_file() and _systemctl_available()
+
+    if had_systemd:
+        subprocess.run(
+            ["systemctl", "--user", "restart", "vektra-ai-meter.service"],
+            check=False,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+        )
+    else:
+        _stop_panel()
+        time.sleep(0.3)
+        _start_panel()
+
+    if wait:
+        for _ in range(20):
+            status = service_status()
+            if status.running:
+                return status
+            time.sleep(0.25)
+
+    return service_status()
 
 
 def ensure_running_or_exit() -> IO[str]:

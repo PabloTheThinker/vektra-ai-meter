@@ -70,6 +70,22 @@ def cmd_update(args: argparse.Namespace) -> int:
     return run_update(restart=not args.no_restart)
 
 
+def cmd_reboot(_args: argparse.Namespace) -> int:
+    from .autostart import reboot_panel
+
+    print("Restarting Vektra AI Meter...")
+    status = reboot_panel()
+    if status.running:
+        print(f"Done. Running (pid {status.pid}). Check your top-bar status area.")
+        return 0
+    print(
+        "Restart issued but the panel is not running yet. "
+        "Try: ai-meter status",
+        file=sys.stderr,
+    )
+    return 1
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description="Vektra AI Meter for Linux")
     sub = parser.add_subparsers(dest="command", required=True)
@@ -106,6 +122,9 @@ def main() -> int:
         help="Skip restarting the panel indicator after update",
     )
     upd.set_defaults(func=cmd_update)
+
+    reboot = sub.add_parser("reboot", help="Restart the panel top-bar indicator")
+    reboot.set_defaults(func=cmd_reboot)
 
     args = parser.parse_args()
     return args.func(args)
