@@ -1,5 +1,19 @@
 # Changelog
 
+## [2026-06-06] — layer-shell build without vapigen (v0.3.4)
+
+### Fixed
+- `ai-meter update` no longer fails when `vapigen` is missing — meson builds gtk4-layer-shell with `-Dvapi=false` (Python GI only needs introspection, not Vala).
+- Stale meson build dirs are wiped and reconfigured on failure.
+- Update continues with Qt panel fallback if layer-shell build fails instead of aborting.
+
+### Verify
+```bash
+ai-meter update
+ai-meter status
+# integrated_popup: true on Wayland after successful build
+```
+
 ## [2026-06-06] — Smooth panel + faster refresh (v0.3.3)
 
 ### Fixed

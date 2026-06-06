@@ -64,8 +64,12 @@ def _ensure_integration() -> None:
     if not is_wayland():
         return
     ok, message = build_layer_shell()
-    if ok and "Already integrated" not in message:
-        print(message)
+    if ok:
+        if "Already integrated" not in message:
+            print(message)
+        return
+    print(f"Warning: integrated dropdown build skipped — {message}", file=sys.stderr)
+    print("Qt panel fallback will be used until layer-shell builds successfully.", file=sys.stderr)
 
 
 def _restart_topbar() -> None:

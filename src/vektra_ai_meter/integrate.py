@@ -40,7 +40,14 @@ def integration_status() -> dict:
 
 INTEGRATE_DEPS_CMD = (
     "sudo apt install -y pkg-config libgtk-4-dev libwayland-dev wayland-protocols "
-    "gobject-introspection libgirepository-2.0-dev python3-gi gir1.2-gtk-4.0"
+    "gobject-introspection libgirepository-2.0-dev python3-gi gir1.2-gtk-4.0 "
+    "meson ninja-build"
+)
+
+MESON_BUILD_OPTS = (
+    "-Dexamples=false",
+    "-Ddocs=false",
+    "-Dvapi=false",
 )
 
 
@@ -56,6 +63,7 @@ def _build_deps_status() -> dict[str, bool]:
         "python_gi": _python_gi_ok(),
         "meson": shutil.which("meson") is not None,
         "ninja": shutil.which("ninja") is not None,
+        "g_ir_scanner": shutil.which("g-ir-scanner") is not None,
     }
 
 
@@ -118,22 +126,47 @@ def build_layer_shell(*, force: bool = False) -> tuple[bool, str]:
     venv_bin = pip.parent
     env["PATH"] = f"{venv_bin}:{env.get('PATH', '')}"
 
-    subprocess.run(
-        [
+    def _meson_setup(*, reconfigure: bool) -> subprocess.CompletedProcess[str]:
+        cmd = [
             "meson",
             "setup",
             f"--prefix={local}",
             "--libdir=lib",
-            "-Dexamples=false",
-            "-Ddocs=false",
-            str(build_dir),
-            str(src),
-        ],
-        check=True,
-        env=env,
-    )
-    subprocess.run(["ninja", "-C", str(build_dir)], check=True, env=env)
-    subprocess.run(["ninja", "-C", str(build_dir), "install"], check=True, env=env)
+            *MESON_BUILD_OPTS,
+        ]
+        if reconfigure:
+            cmd.append("--reconfigure")
+        cmd.extend([str(build_dir), str(src)])
+        return subprocess.run(cmd, check=False, env=env, capture_output=True, text=True)
+
+    setup = _meson_setup(reconfigure=build_dir.exists())
+    if setup.returncode != 0:
+        if build_dir.exists():
+            shutil.rmtree(build_dir, ignore_errors=True)
+        setup = _meson_setup(reconfigure=False)
+
+    if setup.returncode != 0:
+        detail = (setup.stderr or setup.stdout or "").strip()
+        hint = ""
+        if "vapigen" in detail.lower():
+            hint = (
+                "\nVala bindings (vapigen) are not required — this build should use -Dvapi=false.\n"
+                "Update ai-meter and retry: ai-meter update"
+            )
+        return False, (
+            "gtk4-layer-shell meson setup failed.\n"
+            f"{detail or 'See meson-log.txt in the build directory.'}"
+            f"{hint}"
+        )
+
+    for step, args in (
+        ("ninja build", ["ninja", "-C", str(build_dir)]),
+        ("ninja install", ["ninja", "-C", str(build_dir), "install"]),
+    ):
+        result = subprocess.run(args, check=False, env=env, capture_output=True, text=True)
+        if result.returncode != 0:
+            detail = (result.stderr or result.stdout or "").strip()
+            return False, f"gtk4-layer-shell {step} failed.\n{detail}"
 
     if not layer_shell_available():
         return False, (

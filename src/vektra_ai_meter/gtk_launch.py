@@ -61,29 +61,32 @@ def gtk_env() -> dict[str, str]:
     return env
 
 
-def gtk_python_available() -> bool:
+def gtk_python_executable() -> Path | str | None:
     if _python_has_gi(sys.executable):
-        return True
+        return sys.executable
     system = _system_python()
-    return system is not None and _python_has_gi(system)
+    if system is not None and _python_has_gi(system):
+        return system
+    return None
+
+
+def gtk_python_available() -> bool:
+    return gtk_python_executable() is not None
 
 
 def popup_server_argv() -> list[str]:
-    if _python_has_gi(sys.executable):
-        from .paths import venv_ai_meter
+    from .paths import venv_ai_meter
 
+    if _python_has_gi(sys.executable):
         user = Path.home() / ".local" / "bin" / "ai-meter"
         if user.is_file():
             return [str(user), "popup-server"]
         if venv_ai_meter().is_file():
             return [str(venv_ai_meter()), "popup-server"]
-        return [sys.executable, "-m", "vektra_ai_meter.popup_server"]
 
-    system = _system_python()
-    if system is not None and _python_has_gi(system):
-        return [str(system), "-m", "vektra_ai_meter.popup_server"]
-
-    from .paths import venv_ai_meter
+    executable = gtk_python_executable()
+    if executable is not None:
+        return [str(executable), "-m", "vektra_ai_meter.popup_server"]
 
     user = Path.home() / ".local" / "bin" / "ai-meter"
     if user.is_file():

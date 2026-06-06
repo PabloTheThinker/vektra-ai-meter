@@ -3,4 +3,4 @@
 from .snapshot import build_snapshot, write_snapshot
 
 __all__ = ["build_snapshot", "write_snapshot"]
-__version__ = "0.3.3"
+__version__ = "0.3.4"

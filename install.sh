@@ -156,9 +156,10 @@ install_layer_shell() {
     git -C "$LAYER_SRC" pull --ff-only || true
   fi
   meson setup --reconfigure --prefix="${LOCAL_PREFIX}" --libdir=lib \
-    -Dexamples=false -Ddocs=false "$LAYER_SRC/build" "$LAYER_SRC" 2>/dev/null \
-    || meson setup --prefix="${LOCAL_PREFIX}" --libdir=lib \
-      -Dexamples=false -Ddocs=false "$LAYER_SRC/build" "$LAYER_SRC"
+    -Dexamples=false -Ddocs=false -Dvapi=false "$LAYER_SRC/build" "$LAYER_SRC" 2>/dev/null \
+    || rm -rf "$LAYER_SRC/build" \
+    && meson setup --prefix="${LOCAL_PREFIX}" --libdir=lib \
+      -Dexamples=false -Ddocs=false -Dvapi=false "$LAYER_SRC/build" "$LAYER_SRC"
   ninja -C "$LAYER_SRC/build"
   ninja -C "$LAYER_SRC/build" install
   ok "Integrated panel: gtk4-layer-shell installed to ${LOCAL_PREFIX}"

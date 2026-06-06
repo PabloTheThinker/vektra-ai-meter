@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import os
+import subprocess
 import sys
 from pathlib import Path
 
@@ -68,15 +69,30 @@ def preload_layer_shell() -> None:
 
 
 def layer_shell_available() -> bool:
-    from .gtk_launch import gtk_python_available
+    from .gtk_launch import gtk_env, gtk_python_executable
 
-    if find_layer_shell_lib() is None or not gtk_python_available():
+    ensure_local_paths()
+    if find_layer_shell_lib() is None:
         return False
-    try:
-        import gi
 
-        gi.require_version("Gtk", "4.0")
-        gi.require_version("Gtk4LayerShell", "1.0")
-    except (ImportError, ValueError):
+    executable = gtk_python_executable()
+    if executable is None:
         return False
-    return True
+
+    probe = subprocess.run(
+        [
+            str(executable),
+            "-c",
+            (
+                "import gi; "
+                "gi.require_version('Gtk', '4.0'); "
+                "gi.require_version('Gtk4LayerShell', '1.0'); "
+                "from gi.repository import Gtk4LayerShell"
+            ),
+        ],
+        check=False,
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+        env=gtk_env(),
+    )
+    return probe.returncode == 0
