@@ -1,5 +1,20 @@
 # Changelog
 
+## [2026-06-06] — graceful shutdown kills ghost tray icons (v0.3.16)
+
+### Fixed
+- **Duplicate/ghost tray icon.** On `SIGTERM` (systemd stop, `ai-meter reboot`, `pkill`) the process died before Qt could hide the tray, leaving an orphaned StatusNotifier item on the bus. Some panels (notably COSMIC) never prune these, so every ungraceful restart could leave a second, dead icon behind.
+- Added `SIGTERM`/`SIGINT` handlers that route into `app.quit()`, plus an `aboutToQuit` cleanup that hides the tray so the StatusNotifier item is unregistered cleanly. A 200ms wakeup timer keeps the Python interpreter ticking so the signal is delivered while Qt is in its native event loop.
+
+### Note
+- This prevents *new* ghosts. An icon orphaned by a pre-0.3.16 process persists in the panel's watcher until the panel/applet restarts or you log out — it cannot be cleared by the new process.
+
+### Verify
+```bash
+ai-meter reboot          # restart a few times
+# the status area should show exactly one Vektra icon, not a growing pile
+```
+
 ## [2026-06-06] — mtime parse cache for Claude/Codex providers (v0.3.15)
 
 ### Performance

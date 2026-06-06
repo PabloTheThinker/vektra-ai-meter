@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import signal
 import subprocess
 import sys
 import time
@@ -151,6 +152,8 @@ class TopBarIndicator:
         self.tray.setIcon(make_tray_icon())
         self.tray.show()
 
+        self._install_signal_handlers()
+
     def _popup_show_geometry(self) -> tuple[tuple[int, int, int, int], tuple[int, int, int, int]]:
         anchor = tray_anchor_rect(self.tray)
         screen = screen_for_tray(self.tray)
@@ -258,6 +261,33 @@ class TopBarIndicator:
         if self.panel is not None and self.panel.isVisible():
             self.panel.set_refreshing(True)
         self._pool.start(SnapshotTask(self._signals))
+
+    def _install_signal_handlers(self) -> None:
+        """Quit cleanly on SIGTERM/SIGINT so the tray icon is unregistered.
+
+        systemd stop / `reboot` / pkill all send SIGTERM. Without this, the process
+        dies before Qt hides the QSystemTrayIcon, leaving an orphaned StatusNotifier
+        item on the bus — a ghost icon some panels (COSMIC) never prune. We hide the
+        tray on aboutToQuit and route the signals into Qt's event loop. A short timer
+        keeps the Python interpreter ticking so the handler is actually delivered
+        while Qt is in its native loop.
+        """
+        self.app.aboutToQuit.connect(self._cleanup)
+        try:
+            signal.signal(signal.SIGTERM, lambda *_: self.app.quit())
+            signal.signal(signal.SIGINT, lambda *_: self.app.quit())
+        except (ValueError, OSError):
+            # Not on the main thread (shouldn't happen here) — skip rather than crash.
+            return
+        self._signal_wakeup = QTimer()
+        self._signal_wakeup.timeout.connect(lambda: None)
+        self._signal_wakeup.start(200)
+
+    def _cleanup(self) -> None:
+        try:
+            self.tray.hide()
+        except Exception:  # noqa: BLE001 — best-effort teardown, never block quit
+            pass
 
     def run(self) -> int:
         return self.app.exec()
