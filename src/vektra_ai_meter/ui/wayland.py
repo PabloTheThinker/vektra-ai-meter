@@ -24,26 +24,43 @@ def tray_anchor_rect(tray: QSystemTrayIcon) -> QRect:
     return QRect(available.right() - 48, available.top() + 4, 24, 24)
 
 
-def panel_origin(tray: QSystemTrayIcon, panel_width: int, panel_height: int) -> QPoint:
+def _tray_geometry_known(tray: QSystemTrayIcon) -> bool:
+    geo = tray.geometry()
+    return geo.isValid() and geo.width() > 0 and geo.height() > 0
+
+
+def panel_origin(tray: QSystemTrayIcon, panel_width: int, panel_height: int) -> tuple[QPoint, int]:
+    """Return dropdown position and caret offset (x within panel)."""
     anchor = tray_anchor_rect(tray)
     screen = QApplication.primaryScreen()
     available = screen.availableGeometry() if screen else QRect(0, 0, 1920, 1080)
 
-    x = anchor.x() + max(0, (anchor.width() - panel_width) // 2)
-    y = anchor.y() + anchor.height() + 8
+    if _tray_geometry_known(tray):
+        center_x = anchor.center().x()
+        x = center_x - panel_width // 2
+        y = anchor.bottom() + 2
+        caret_x = center_x - x
+    else:
+        x = available.right() - panel_width - 12
+        y = available.top() + 6
+        caret_x = panel_width - 36
 
     if y + panel_height > available.bottom():
-        y = max(available.top() + 8, anchor.y() - panel_height - 8)
+        y = max(available.top() + 6, anchor.y() - panel_height - 4)
+        caret_x = panel_width - 36
 
     x = min(max(available.left() + 8, x), available.right() - panel_width - 8)
-    y = min(max(available.top() + 8, y), available.bottom() - panel_height - 8)
-    return QPoint(x, y)
+    y = min(max(available.top() + 4, y), available.bottom() - panel_height - 8)
+    caret_x = max(18, min(panel_width - 18, caret_x))
+    return QPoint(x, y), caret_x
 
 
 def show_panel_near_tray(panel: QWidget, tray: QSystemTrayIcon) -> None:
-    """Position and show the usage panel without Wayland grabbing-popup windows."""
+    """Drop the usage panel down from the top-bar tray icon."""
     panel.adjustSize()
-    origin = panel_origin(tray, panel.width(), panel.height())
+    origin, caret_x = panel_origin(tray, panel.width(), panel.height())
+    if hasattr(panel, "caret"):
+        panel.caret.set_offset(caret_x)
     panel.move(origin)
     panel.show()
     panel.raise_()

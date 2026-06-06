@@ -2,7 +2,8 @@ from __future__ import annotations
 
 from datetime import datetime, timezone
 
-from PySide6.QtCore import Qt, Signal
+from PySide6.QtCore import QPoint, Qt, Signal
+from PySide6.QtGui import QColor, QPainter, QPen, QPolygon
 from PySide6.QtWidgets import (
     QFrame,
     QHBoxLayout,
@@ -16,6 +17,8 @@ from PySide6.QtWidgets import (
 )
 
 from .wayland import show_panel_near_tray
+
+CARET_HEIGHT = 10
 
 
 def _usage_color_css(percent: float) -> str:
@@ -47,6 +50,42 @@ def _reset_hint(value: str | None) -> str:
         return f"resets in {days}d"
     except ValueError:
         return ""
+
+
+class DropdownCaret(QWidget):
+    """Small upward caret connecting the panel to the top-bar tray icon."""
+
+    def __init__(self) -> None:
+        super().__init__()
+        self._offset = 0
+        self.setFixedHeight(CARET_HEIGHT)
+
+    def set_offset(self, x: int) -> None:
+        self._offset = x
+        self.update()
+
+    def paintEvent(self, _event) -> None:  # noqa: N802
+        painter = QPainter(self)
+        painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+
+        cx = max(14, min(self.width() - 14, self._offset))
+        half = 7
+        top = self.height() - 1
+
+        fill = QColor("#09090b")
+        border = QColor("#27272a")
+
+        left = QPoint(cx - half, top)
+        right = QPoint(cx + half, top)
+        tip = QPoint(cx, 0)
+
+        painter.setBrush(fill)
+        painter.setPen(Qt.PenStyle.NoPen)
+        painter.drawPolygon(QPolygon([left, right, tip]))
+
+        painter.setPen(QPen(border, 1))
+        painter.drawLine(left, tip)
+        painter.drawLine(tip, right)
 
 
 class LimitRow(QWidget):
@@ -180,7 +219,6 @@ class ProviderCard(QFrame):
 
 class UsagePanel(QWidget):
     refresh_requested = Signal()
-    quit_requested = Signal()
 
     def __init__(self) -> None:
         super().__init__()
@@ -191,15 +229,32 @@ class UsagePanel(QWidget):
         )
         self.setAttribute(Qt.WidgetAttribute.WA_ShowWithoutActivating, True)
         self.setFixedWidth(340)
-        self.setStyleSheet(
-            "background: #09090b; color: #fafafa; border: 1px solid #27272a; border-radius: 12px;"
-        )
 
-        outer = QVBoxLayout(self)
-        outer.setContentsMargins(14, 14, 14, 12)
+        shell = QVBoxLayout(self)
+        shell.setContentsMargins(0, 0, 0, 0)
+        shell.setSpacing(0)
+
+        self.caret = DropdownCaret()
+        shell.addWidget(self.caret)
+
+        body = QFrame()
+        body.setObjectName("panelBody")
+        body.setStyleSheet(
+            "#panelBody {"
+            "  background: #09090b;"
+            "  color: #fafafa;"
+            "  border: 1px solid #27272a;"
+            "  border-radius: 12px;"
+            "}"
+        )
+        shell.addWidget(body)
+
+        outer = QVBoxLayout(body)
+        outer.setContentsMargins(14, 12, 14, 12)
         outer.setSpacing(10)
 
         header = QHBoxLayout()
+        header.setSpacing(8)
         title = QLabel("Vektra AI Meter")
         title.setStyleSheet("font-size: 14px; font-weight: 700;")
         header.addWidget(title)
@@ -207,6 +262,25 @@ class UsagePanel(QWidget):
         self.peak_label = QLabel("")
         self.peak_label.setStyleSheet("color: #a1a1aa; font-size: 11px;")
         header.addWidget(self.peak_label)
+
+        close_btn = QPushButton("×")
+        close_btn.setFixedSize(28, 28)
+        close_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        close_btn.setToolTip("Close")
+        close_btn.clicked.connect(self.hide)
+        close_btn.setStyleSheet(
+            "QPushButton {"
+            "  background: transparent;"
+            "  color: #a1a1aa;"
+            "  border: none;"
+            "  border-radius: 6px;"
+            "  font-size: 18px;"
+            "  font-weight: 400;"
+            "  padding: 0;"
+            "}"
+            "QPushButton:hover { background: #27272a; color: #fafafa; }"
+        )
+        header.addWidget(close_btn)
         outer.addLayout(header)
 
         self.scroll = QScrollArea()
@@ -222,27 +296,20 @@ class UsagePanel(QWidget):
         self.scroll.setWidget(self.cards_host)
         outer.addWidget(self.scroll)
 
-        actions = QHBoxLayout()
-        actions.setSpacing(8)
         refresh_btn = QPushButton("Refresh")
         refresh_btn.clicked.connect(self.refresh_requested.emit)
-        quit_btn = QPushButton("Quit")
-        quit_btn.clicked.connect(self.quit_requested.emit)
-        for btn in (refresh_btn, quit_btn):
-            btn.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
-            btn.setStyleSheet(
-                "QPushButton {"
-                "  background: #27272a;"
-                "  color: #fafafa;"
-                "  border: none;"
-                "  border-radius: 8px;"
-                "  padding: 8px 12px;"
-                "}"
-                "QPushButton:hover { background: #3f3f46; }"
-            )
-        actions.addWidget(refresh_btn)
-        actions.addWidget(quit_btn)
-        outer.addLayout(actions)
+        refresh_btn.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
+        refresh_btn.setStyleSheet(
+            "QPushButton {"
+            "  background: #27272a;"
+            "  color: #fafafa;"
+            "  border: none;"
+            "  border-radius: 8px;"
+            "  padding: 8px 12px;"
+            "}"
+            "QPushButton:hover { background: #3f3f46; }"
+        )
+        outer.addWidget(refresh_btn)
 
     def set_snapshot(self, snapshot: dict) -> None:
         summary = snapshot.get("summary") or {}

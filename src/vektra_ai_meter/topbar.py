@@ -83,7 +83,6 @@ class TopBarIndicator:
 
         self.panel = UsagePanel()
         self.panel.refresh_requested.connect(self._refresh)
-        self.panel.quit_requested.connect(self._quit)
         self._click_away = ClickAwayFilter(self.panel, self.tray)
 
         self.tray.activated.connect(self._on_activated)
@@ -112,11 +111,6 @@ class TopBarIndicator:
         self.tray.setToolTip(_rich_tooltip(snapshot))
         self.tray.setIcon(make_tray_icon(_icon_bars(snapshot)))
         self.panel.set_snapshot(snapshot)
-
-    def _quit(self) -> None:
-        self.panel.hide()
-        self.tray.hide()
-        self.app.quit()
 
     def run(self) -> int:
         return self.app.exec()

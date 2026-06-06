@@ -1,5 +1,11 @@
 # Changelog
 
+## [2026-06-06] — Panel dropdown + close button
+
+### Changed
+- Usage panel drops down from the top-bar tray icon with an upward caret (CodexBar-style).
+- Replaced **Quit** with a header **×** close button — closes the panel only; tray keeps running.
+
 ## [2026-06-06] — `ai-meter reboot` command
 
 ### Added
