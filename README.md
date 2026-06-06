@@ -2,7 +2,7 @@
 
 Vektra Software glance panel for Linux. Track local AI coding agent usage across **Grok Build**, **Codex**, and **Claude Code** from session data on your machine - no API keys, no cloud.
 
-One frosted desktop card, three glance sizes, and optional Waybar, Conky, or eww surfaces fed by a shared snapshot.
+Installs a **panel top-bar indicator** (Ayatana AppIndicator) by default — the same status-area pattern COSMIC, GNOME, and Xfce use for add-ons. Optional frosted desktop card, Waybar, Conky, or eww surfaces share one snapshot.
 
 ## Install
 
@@ -10,7 +10,7 @@ One frosted desktop card, three glance sizes, and optional Waybar, Conky, or eww
 curl -fsSL https://vektraindustries.com/ai-tracker/install | bash
 ```
 
-Installs `ai-meter` to `~/.local/bin`, enables autostart, and launches the glance panel.
+Installs `ai-meter` to `~/.local/bin`, enables autostart, and launches the panel indicator in your top bar.
 
 GitHub direct:
 
@@ -24,10 +24,15 @@ Re-run anytime to update.
 
 ```bash
 ./install.sh
-ai-meter widget
+ai-meter run
 ```
 
-The glance panel is:
+The default top-bar indicator:
+- **Lives in the panel** — compact token count + active sessions beside system icons
+- **Click for detail** — Grok, Codex, and Claude breakdown in the menu
+- **Autostart** — launches on login via `~/.config/autostart/`
+
+The optional glance panel (`ai-meter widget`) is:
 - **Frameless** - rounded frosted card, no title chrome
 - **Compact** - small, medium, and large glance sizes
 - **Autostart** - launches on login via `~/.config/autostart/`
@@ -54,9 +59,12 @@ Requires `sudo apt install git meson ninja-build libgtk-4-dev libwayland-dev` fi
 ## Commands
 
 ```bash
+ai-meter run
+ai-meter topbar
 ai-meter widget
 ai-meter snapshot --write --pretty
 ai-meter print
+ai-meter config --interface topbar
 ai-meter config --size small
 ```
 
@@ -66,6 +74,7 @@ Snapshot path: `~/.local/share/vektra-ai-meter/snapshot.json`
 
 | Surface | Desktop | Command / path |
 |---------|---------|----------------|
+| **Panel top-bar indicator** | COSMIC, GNOME, Xfce, most DEs with status area | `ai-meter topbar` (default) |
 | **GTK glance panel** | COSMIC, GNOME, XFCE, most Wayland/X11 | `ai-meter widget` |
 | **Waybar** | Sway, Hyprland, i3 | `widget/waybar/module.sh` |
 | **Conky** | X11 WMs | `widget/conky/ai-meter.conkyrc` |

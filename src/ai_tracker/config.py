@@ -7,6 +7,7 @@ from pathlib import Path
 
 @dataclass
 class WidgetConfig:
+    interface: str = "topbar"
     size: str = "medium"
     anchor: str = "top-right"
     margin: int = 24
@@ -26,7 +27,11 @@ class WidgetConfig:
             data = json.loads(self.path.read_text(encoding="utf-8"))
         except (OSError, json.JSONDecodeError):
             return self
+        interface = str(data.get("interface", self.interface))
+        if interface not in ("topbar", "widget"):
+            interface = self.interface
         return WidgetConfig(
+            interface=interface,
             size=str(data.get("size", self.size)),
             anchor=str(data.get("anchor", self.anchor)),
             margin=int(data.get("margin", self.margin)),

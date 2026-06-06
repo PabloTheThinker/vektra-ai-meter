@@ -24,7 +24,7 @@ fi
 
 echo ""
 echo -e "${MAGENTA}${BOLD}Vektra AI Meter${NC}"
-echo -e "${CYAN}Glanceable desktop meter for Grok, Codex, and Claude${NC}"
+echo -e "${CYAN}Top-bar panel meter for Grok, Codex, and Claude${NC}"
 echo ""
 
 if ! command -v git >/dev/null 2>&1; then

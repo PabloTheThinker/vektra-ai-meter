@@ -32,10 +32,27 @@ def cmd_widget(args: argparse.Namespace) -> int:
     return widget_main()
 
 
+def cmd_topbar(args: argparse.Namespace) -> int:
+    from ai_tracker.topbar import main as topbar_main
+
+    return topbar_main()
+
+
+def cmd_run(args: argparse.Namespace) -> int:
+    from ai_tracker.config import WidgetConfig
+
+    config = WidgetConfig().load()
+    if config.interface == "widget":
+        return cmd_widget(args)
+    return cmd_topbar(args)
+
+
 def cmd_config(args: argparse.Namespace) -> int:
     from ai_tracker.config import WidgetConfig
 
     config = WidgetConfig().load()
+    if args.interface:
+        config.interface = args.interface
     if args.size:
         config.size = args.size
     if args.anchor:
@@ -46,6 +63,7 @@ def cmd_config(args: argparse.Namespace) -> int:
         config.autostart = args.autostart == "true"
     config.save()
     print(json.dumps({
+        "interface": config.interface,
         "size": config.size,
         "anchor": config.anchor,
         "margin": config.margin,
@@ -77,10 +95,17 @@ def main() -> int:
     snap.add_argument("--pretty", action="store_true")
     snap.set_defaults(func=cmd_snapshot)
 
-    widget = sub.add_parser("widget", help="Launch the Vektra glance panel")
+    run = sub.add_parser("run", help="Launch the configured interface (default: topbar)")
+    run.set_defaults(func=cmd_run)
+
+    topbar = sub.add_parser("topbar", help="Launch the panel top-bar indicator")
+    topbar.set_defaults(func=cmd_topbar)
+
+    widget = sub.add_parser("widget", help="Launch the frosted desktop glance panel")
     widget.set_defaults(func=cmd_widget)
 
-    cfg = sub.add_parser("config", help="View or update glance panel settings")
+    cfg = sub.add_parser("config", help="View or update interface settings")
+    cfg.add_argument("--interface", choices=["topbar", "widget"])
     cfg.add_argument("--size", choices=["small", "medium", "large"])
     cfg.add_argument("--anchor", choices=["top-left", "top-right", "bottom-left", "bottom-right"])
     cfg.add_argument("--margin", type=int)
