@@ -179,6 +179,7 @@ class TopBarIndicator:
         if self.integrated:
             if not popup_server_running():
                 self._ensure_popup_server()
+            self._refresh()
             if not toggle_popup():
                 self._ensure_popup_server()
                 time.sleep(0.15)

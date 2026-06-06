@@ -1,11 +1,13 @@
 from __future__ import annotations
 
+import json
+import os
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
-from ..util import home, iter_jsonl, parse_iso
+from ..util import home, iter_jsonl, parse_iso, unix_ts
 
 MAX_CLAUDE_SCAN = 64
 
@@ -27,6 +29,30 @@ class ClaudeStats:
     today_sessions: int = 0
 
 
+def _live_session_records() -> list[dict[str, Any]]:
+    sessions_dir = home() / ".claude" / "sessions"
+    live: list[dict[str, Any]] = []
+    if not sessions_dir.exists():
+        return live
+
+    for path in sessions_dir.glob("*.json"):
+        try:
+            data = json.loads(path.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError):
+            continue
+        if not isinstance(data, dict):
+            continue
+
+        pid = data.get("pid")
+        if pid is not None:
+            try:
+                os.kill(int(pid), 0)
+            except (OSError, ValueError, ProcessLookupError):
+                continue
+        live.append(data)
+    return live
+
+
 def _usage_from_message(message: dict[str, Any]) -> dict[str, int]:
     usage = message.get("usage") or {}
     return {
@@ -40,13 +66,27 @@ def _usage_from_message(message: dict[str, Any]) -> dict[str, int]:
 def collect_claude_stats() -> ClaudeStats:
     root = home() / ".claude" / "projects"
     stats = ClaudeStats()
-    if not root.exists():
-        return stats
+    live_sessions = _live_session_records()
+    seen_session_ids: set[str] = set()
 
     today = datetime.now(timezone.utc).date()
 
+    if not root.exists():
+        stats.active_sessions = len(live_sessions)
+        stats.sessions = len(live_sessions)
+        for live in live_sessions:
+            session_id = str(live.get("sessionId") or "")
+            if session_id:
+                seen_session_ids.add(session_id)
+            updated_at = unix_ts(live.get("updatedAt"))
+            if updated_at and (stats.latest_at is None or updated_at >= stats.latest_at):
+                stats.latest_at = updated_at
+                stats.latest_cwd = live.get("cwd") or stats.latest_cwd
+        return stats
+
     paths = sorted(root.rglob("*.jsonl"), key=lambda p: p.stat().st_mtime, reverse=True)
     for session_path in paths[:MAX_CLAUDE_SCAN]:
+        seen_session_ids.add(session_path.stem)
         session_input = 0
         session_output = 0
         session_cache_create = 0
@@ -88,9 +128,6 @@ def collect_claude_stats() -> ClaudeStats:
         stats.cache_read_tokens += session_cache_read
         stats.total_tokens += session_total
 
-        if session_at and (datetime.now(timezone.utc) - session_at).total_seconds() < 3600:
-            stats.active_sessions += 1
-
         if session_at and session_at.date() == today:
             stats.today_sessions += 1
             stats.today_tokens += session_total
@@ -101,4 +138,16 @@ def collect_claude_stats() -> ClaudeStats:
             stats.latest_title = session_title
             stats.latest_cwd = session_cwd
 
+    for live in live_sessions:
+        session_id = str(live.get("sessionId") or "")
+        if session_id and session_id not in seen_session_ids:
+            stats.sessions += 1
+            seen_session_ids.add(session_id)
+
+        updated_at = unix_ts(live.get("updatedAt"))
+        if updated_at and (stats.latest_at is None or updated_at >= stats.latest_at):
+            stats.latest_at = updated_at
+            stats.latest_cwd = live.get("cwd") or stats.latest_cwd
+
+    stats.active_sessions = len(live_sessions)
     return stats

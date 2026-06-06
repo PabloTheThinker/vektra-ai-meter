@@ -1,5 +1,20 @@
 # Changelog
 
+## [2026-06-06] — popup reopen + live Claude sessions (v0.3.7)
+
+### Fixed
+- GTK dropdown reopen after closing with ✕: `show()` now calls `set_visible(True)` before `present()` (layer-shell windows stayed hidden after close).
+- Popup collects a fresh snapshot in the background whenever it opens, so Claude/Grok/Codex data is current instead of up to 15s stale.
+- Tray click kicks off an immediate refresh before toggling the integrated popup.
+- Claude active sessions now come from live `~/.claude/sessions/*.json` PIDs instead of a 1-hour jsonl mtime guess; brand-new sessions count even before token usage is logged.
+
+### Verify
+```bash
+ai-meter update
+# Open dropdown → close with ✕ → click tray icon again (should reopen)
+# With Claude terminals open, panel should show matching active session count
+```
+
 ## [2026-06-06] — update auto-restart uses fresh code (v0.3.6)
 
 ### Fixed

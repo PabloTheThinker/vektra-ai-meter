@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import os
+import threading
 from datetime import datetime, timezone
 
 from ..layershell import preload_layer_shell
@@ -549,6 +550,28 @@ class IntegratedPopup:
         self._digest = digest
         self._render_snapshot(snapshot)
 
+    def _collect_and_refresh(self) -> None:
+        try:
+            from ..snapshot import write_snapshot
+
+            snapshot = write_snapshot()
+        except Exception:
+            return
+        GLib.idle_add(self._apply_collected_snapshot, snapshot)
+
+    def _apply_collected_snapshot(self, snapshot: dict) -> bool:
+        if not self.visible:
+            return False
+        digest = snapshot_display_digest(snapshot)
+        if digest == self._digest:
+            self._generated_at = snapshot.get("generated_at")
+            if self.footer_label is not None:
+                self.footer_label.set_text(ago_label(self._generated_at))
+            return False
+        self._digest = digest
+        self._render_snapshot(snapshot)
+        return False
+
     def _start_footer_timer(self) -> None:
         if self._footer_timer_id is not None:
             return
@@ -571,18 +594,20 @@ class IntegratedPopup:
         self.refresh(force=True)
         backdrop = self._ensure_backdrop()
         backdrop.set_visible(True)
+        self.window.set_visible(True)
         self.window.present()
         self.visible = True
         self._start_footer_timer()
+        threading.Thread(target=self._collect_and_refresh, daemon=True).start()
 
     def hide(self) -> None:
         if self.window is None:
             return
+        self.visible = False
+        self._stop_footer_timer()
         if self.backdrop is not None:
             self.backdrop.set_visible(False)
         self.window.set_visible(False)
-        self.visible = False
-        self._stop_footer_timer()
 
     def toggle(self) -> None:
         if self.visible:
