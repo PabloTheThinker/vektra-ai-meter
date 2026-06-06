@@ -23,6 +23,7 @@ class ServiceStatus:
     systemd_unit: bool
     systemd_active: bool
     version: str | None
+    popup_server_running: bool = False
 
 
 def lock_path() -> Path:
@@ -86,7 +87,13 @@ def _systemd_content() -> str:
     )
 
 
-def sync_autostart(*, enabled: bool | None = None) -> bool:
+def _panel_env() -> dict[str, str]:
+    from .gtk_launch import gtk_env
+
+    return gtk_env()
+
+
+def sync_autostart(*, enabled: bool | None = None, activate: bool = False) -> bool:
     """Write desktop + systemd autostart entries. Returns effective enabled state."""
     config = Config().load()
     if enabled is None:
@@ -110,20 +117,21 @@ def sync_autostart(*, enabled: bool | None = None) -> bool:
             stdout=subprocess.DEVNULL,
             stderr=subprocess.DEVNULL,
         )
-        if enabled:
-            subprocess.run(
-                ["systemctl", "--user", "enable", "--now", "vektra-ai-meter.service"],
-                check=False,
-                stdout=subprocess.DEVNULL,
-                stderr=subprocess.DEVNULL,
-            )
-        else:
-            subprocess.run(
-                ["systemctl", "--user", "disable", "--now", "vektra-ai-meter.service"],
-                check=False,
-                stdout=subprocess.DEVNULL,
-                stderr=subprocess.DEVNULL,
-            )
+        if activate:
+            if enabled:
+                subprocess.run(
+                    ["systemctl", "--user", "enable", "--now", "vektra-ai-meter.service"],
+                    check=False,
+                    stdout=subprocess.DEVNULL,
+                    stderr=subprocess.DEVNULL,
+                )
+            else:
+                subprocess.run(
+                    ["systemctl", "--user", "disable", "--now", "vektra-ai-meter.service"],
+                    check=False,
+                    stdout=subprocess.DEVNULL,
+                    stderr=subprocess.DEVNULL,
+                )
     return enabled
 
 
@@ -152,27 +160,37 @@ def _systemd_active() -> bool:
     return result.stdout.strip() == "active"
 
 
-def _find_running_pid() -> int | None:
+def _run_process_patterns() -> list[str]:
     meter = venv_ai_meter()
-    patterns = [str(ai_meter_bin())]
-    if meter.is_file() and meter != ai_meter_bin():
-        patterns.append(str(meter))
-
+    patterns = [
+        str(ai_meter_bin()),
+        str(meter),
+        "vektra_ai_meter",
+    ]
+    unique: list[str] = []
     for pattern in patterns:
+        if pattern and pattern not in unique:
+            unique.append(pattern)
+    return unique
+
+
+def _find_running_pid() -> int | None:
+    for pattern in _run_process_patterns():
         result = subprocess.run(
-            ["pgrep", "-f", f"{pattern} run"],
+            ["pgrep", "-f", f"{pattern}.* run"],
             capture_output=True,
             text=True,
             check=False,
         )
-        if result.returncode == 0:
-            for line in result.stdout.splitlines():
-                try:
-                    pid = int(line.strip())
-                except ValueError:
-                    continue
-                if pid != os.getpid():
-                    return pid
+        if result.returncode != 0:
+            continue
+        for line in result.stdout.splitlines():
+            try:
+                pid = int(line.strip())
+            except ValueError:
+                continue
+            if pid != os.getpid():
+                return pid
     return None
 
 
@@ -191,6 +209,8 @@ def acquire_instance_lock() -> IO[str] | None:
 
 
 def service_status() -> ServiceStatus:
+    from .ipc import popup_server_running
+
     config = Config().load()
     version: str | None = None
     try:
@@ -209,6 +229,7 @@ def service_status() -> ServiceStatus:
         systemd_unit=systemd_unit_path().is_file(),
         systemd_active=_systemd_active(),
         version=version,
+        popup_server_running=popup_server_running(),
     )
 
 
@@ -236,16 +257,28 @@ def status_dict() -> dict:
     }
 
 
+def _popup_server_patterns() -> list[str]:
+    return [
+        "vektra_ai_meter.popup_server",
+        "ai-meter popup-server",
+        f"{ai_meter_bin()} popup-server",
+        "run_popup_server()",
+    ]
+
+
 def _stop_popup_server() -> None:
     from .ipc import PID_PATH, SOCKET_PATH
 
-    meter = venv_ai_meter()
-    patterns = [str(ai_meter_bin())]
-    if meter.is_file() and meter != ai_meter_bin():
-        patterns.append(str(meter))
+    if PID_PATH.exists():
+        try:
+            pid = int(PID_PATH.read_text(encoding="utf-8").strip())
+            os.kill(pid, 15)
+            time.sleep(0.15)
+        except (OSError, ValueError):
+            pass
 
-    for pattern in patterns:
-        subprocess.run(["pkill", "-f", f"{pattern} popup-server"], check=False)
+    for pattern in _popup_server_patterns():
+        subprocess.run(["pkill", "-f", pattern], check=False)
 
     try:
         PID_PATH.unlink(missing_ok=True)
@@ -255,13 +288,8 @@ def _stop_popup_server() -> None:
 
 
 def _stop_panel() -> None:
-    meter = venv_ai_meter()
-    patterns = [str(ai_meter_bin())]
-    if meter.is_file() and meter != ai_meter_bin():
-        patterns.append(str(meter))
-
-    for pattern in patterns:
-        subprocess.run(["pkill", "-f", f"{pattern} run"], check=False)
+    for pattern in _run_process_patterns():
+        subprocess.run(["pkill", "-f", f"{pattern}.* run"], check=False)
 
     _stop_popup_server()
 
@@ -277,36 +305,82 @@ def _start_panel() -> None:
         return
     subprocess.Popen(
         [str(launcher), "run"],
+        env=_panel_env(),
         stdout=subprocess.DEVNULL,
         stderr=subprocess.DEVNULL,
         start_new_session=True,
     )
 
 
+def _wait_for_stop(*, timeout_s: float = 5.0) -> bool:
+    deadline = time.time() + timeout_s
+    while time.time() < deadline:
+        if _find_running_pid() is None:
+            return True
+        time.sleep(0.15)
+    return _find_running_pid() is None
+
+
+def _wait_for_start(*, old_pid: int | None = None, timeout_s: float = 10.0) -> ServiceStatus:
+    deadline = time.time() + timeout_s
+    while time.time() < deadline:
+        status = service_status()
+        if status.running and (old_pid is None or status.pid != old_pid):
+            return status
+        time.sleep(0.25)
+    return service_status()
+
+
+def _wait_for_popup_server(*, timeout_s: float = 8.0) -> bool:
+    from .ipc import popup_server_running
+
+    deadline = time.time() + timeout_s
+    while time.time() < deadline:
+        if popup_server_running():
+            return True
+        time.sleep(0.25)
+    return popup_server_running()
+
+
 def reboot_panel(*, wait: bool = True) -> ServiceStatus:
     """Stop and restart the top-bar indicator."""
-    had_systemd = systemd_unit_path().is_file() and _systemctl_available()
+    from .integrate import integration_status
 
-    if had_systemd:
-        _stop_popup_server()
+    old_pid = _find_running_pid()
+    use_systemd = systemd_unit_path().is_file() and _systemctl_available()
+    want_popup = integration_status()["integrated_popup"]
+
+    _stop_panel()
+    _wait_for_stop()
+
+    if use_systemd:
         subprocess.run(
-            ["systemctl", "--user", "restart", "vektra-ai-meter.service"],
+            ["systemctl", "--user", "stop", "vektra-ai-meter.service"],
             check=False,
-            stdout=subprocess.DEVNULL,
-            stderr=subprocess.DEVNULL,
+            capture_output=True,
+            text=True,
         )
+        _wait_for_stop()
+        result = subprocess.run(
+            ["systemctl", "--user", "start", "vektra-ai-meter.service"],
+            check=False,
+            capture_output=True,
+            text=True,
+        )
+        if result.returncode != 0:
+            detail = (result.stderr or result.stdout or "").strip()
+            print(f"systemd start failed: {detail}", file=sys.stderr)
+            _start_panel()
     else:
-        _stop_panel()
-        time.sleep(0.3)
+        time.sleep(0.2)
         _start_panel()
 
     if wait:
-        for _ in range(20):
+        status = _wait_for_start(old_pid=old_pid)
+        if want_popup and status.running:
+            _wait_for_popup_server()
             status = service_status()
-            if status.running:
-                return status
-            time.sleep(0.25)
-
+        return status
     return service_status()
 
 
@@ -314,7 +388,7 @@ def ensure_running_or_exit() -> IO[str]:
     """Single-instance guard for `ai-meter run`."""
     lock = acquire_instance_lock()
     if lock is not None:
-        sync_autostart()
+        sync_autostart(activate=False)
         return lock
 
     status = service_status()
@@ -339,5 +413,5 @@ def ensure_running_or_exit() -> IO[str]:
     if lock is None:
         print("Failed to acquire instance lock.", file=sys.stderr)
         raise SystemExit(1)
-    sync_autostart()
+    sync_autostart(activate=False)
     return lock

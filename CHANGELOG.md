@@ -1,5 +1,23 @@
 # Changelog
 
+## [2026-06-06] — reboot + popup-server fix (v0.3.5)
+
+### Fixed
+- `ai-meter reboot` now fully stops tray + popup, clears stale locks, and waits for a new PID.
+- Integrated popup server launches via `python -c` import (fixes broken `-m` relative-import crash).
+- Popup server gets `LD_PRELOAD` + `VEKTRA_LAYER_SHELL_PRELOADED` in env (fixes execve breaking `python -c`).
+- Popup server processes are killed correctly on reboot (system python + module patterns).
+- Reboot waits for integrated dropdown server to come up on Wayland.
+- `ai-meter run` no longer spawns `systemctl enable --now` on every start (was racing reboot).
+
+### Verify
+```bash
+ai-meter update
+ai-meter reboot
+ai-meter status
+# popup_server_running: true on Wayland
+```
+
 ## [2026-06-06] — layer-shell build without vapigen (v0.3.4)
 
 ### Fixed

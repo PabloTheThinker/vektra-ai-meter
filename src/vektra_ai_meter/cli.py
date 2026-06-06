@@ -36,9 +36,9 @@ def cmd_config(args: argparse.Namespace) -> int:
     config = Config().load()
     if args.autostart is not None:
         enabled = args.autostart == "true"
-        sync_autostart(enabled=enabled)
+        sync_autostart(enabled=enabled, activate=True)
     else:
-        sync_autostart()
+        sync_autostart(activate=True)
     config = Config().load()
     print(
         json.dumps(
@@ -73,7 +73,13 @@ def cmd_update(args: argparse.Namespace) -> int:
 def cmd_popup_server(_args: argparse.Namespace) -> int:
     import os
 
-    from .gtk_launch import gtk_env, gtk_python_available, popup_server_argv
+    from .gtk_launch import (
+        POPUP_SERVER_BOOT,
+        _python_has_gi,
+        gtk_python_available,
+        gtk_python_executable,
+        popup_server_env,
+    )
 
     if not gtk_python_available():
         print(
@@ -83,9 +89,14 @@ def cmd_popup_server(_args: argparse.Namespace) -> int:
         )
         return 1
 
-    argv = popup_server_argv()
-    if "-m" in argv and argv[0] != sys.executable:
-        os.execve(argv[0], argv, gtk_env())
+    if not _python_has_gi(sys.executable):
+        executable = gtk_python_executable()
+        if executable is not None:
+            os.execve(
+                str(executable),
+                [str(executable), "-c", POPUP_SERVER_BOOT],
+                popup_server_env(),
+            )
 
     from .popup_server import run_popup_server
 
@@ -100,18 +111,29 @@ def cmd_integrate(args: argparse.Namespace) -> int:
 
 def cmd_reboot(_args: argparse.Namespace) -> int:
     from .autostart import reboot_panel
+    from .integrate import integration_status
 
     print("Restarting Vektra AI Meter...")
     status = reboot_panel()
-    if status.running:
-        print(f"Done. Running (pid {status.pid}). Check your top-bar status area.")
-        return 0
-    print(
-        "Restart issued but the panel is not running yet. "
-        "Try: ai-meter status",
-        file=sys.stderr,
-    )
-    return 1
+    if not status.running:
+        print(
+            "Restart issued but the panel is not running yet. "
+            "Try: ai-meter status",
+            file=sys.stderr,
+        )
+        return 1
+
+    lines = [f"Done. Tray running (pid {status.pid})."]
+    if integration_status()["integrated_popup"]:
+        if status.popup_server_running:
+            lines.append("Integrated dropdown server is up.")
+        else:
+            lines.append(
+                "Tray is up but the integrated dropdown server is still starting — "
+                "click the tray icon in a few seconds."
+            )
+    print(" ".join(lines))
+    return 0
 
 
 def main() -> int:

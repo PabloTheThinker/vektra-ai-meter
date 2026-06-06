@@ -11,7 +11,7 @@ from PySide6.QtCore import QObject, QRunnable, QThreadPool, QTimer, Signal, Slot
 from PySide6.QtWidgets import QApplication, QSystemTrayIcon
 
 from .autostart import ensure_running_or_exit
-from .gtk_launch import gtk_env, popup_server_argv
+from .gtk_launch import popup_server_argv, popup_server_env
 from .ipc import popup_server_running, refresh_popup, toggle_popup
 from .layershell import layer_shell_available
 from .paths import venv_ai_meter
@@ -159,7 +159,7 @@ class TopBarIndicator:
             return
         subprocess.Popen(
             popup_server_argv(),
-            env=gtk_env(),
+            env=popup_server_env(),
             stdout=subprocess.DEVNULL,
             stderr=subprocess.DEVNULL,
             start_new_session=True,

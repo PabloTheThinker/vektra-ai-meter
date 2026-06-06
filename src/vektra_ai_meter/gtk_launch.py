@@ -7,6 +7,11 @@ import subprocess
 import sys
 from pathlib import Path
 
+POPUP_SERVER_BOOT = (
+    "from vektra_ai_meter.popup_server import run_popup_server; "
+    "raise SystemExit(run_popup_server())"
+)
+
 
 def _system_python() -> Path | None:
     for candidate in ("/usr/bin/python3", "/bin/python3"):
@@ -61,6 +66,19 @@ def gtk_env() -> dict[str, str]:
     return env
 
 
+def popup_server_env() -> dict[str, str]:
+    """Environment for the GTK popup — LD_PRELOAD must be set before Python starts."""
+    from .layershell import find_layer_shell_lib
+
+    env = gtk_env()
+    layer_lib = find_layer_shell_lib()
+    if layer_lib is not None:
+        existing = env.get("LD_PRELOAD", "")
+        env["LD_PRELOAD"] = f"{layer_lib}:{existing}" if existing else str(layer_lib)
+        env["VEKTRA_LAYER_SHELL_PRELOADED"] = "1"
+    return env
+
+
 def gtk_python_executable() -> Path | str | None:
     if _python_has_gi(sys.executable):
         return sys.executable
@@ -75,18 +93,12 @@ def gtk_python_available() -> bool:
 
 
 def popup_server_argv() -> list[str]:
+    """Launch argv for the GTK integrated popup process."""
     from .paths import venv_ai_meter
-
-    if _python_has_gi(sys.executable):
-        user = Path.home() / ".local" / "bin" / "ai-meter"
-        if user.is_file():
-            return [str(user), "popup-server"]
-        if venv_ai_meter().is_file():
-            return [str(venv_ai_meter()), "popup-server"]
 
     executable = gtk_python_executable()
     if executable is not None:
-        return [str(executable), "-m", "vektra_ai_meter.popup_server"]
+        return [str(executable), "-c", POPUP_SERVER_BOOT]
 
     user = Path.home() / ".local" / "bin" / "ai-meter"
     if user.is_file():
