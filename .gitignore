@@ -4,5 +4,9 @@ __pycache__/
 .Python
 *.egg-info/
 .venv/
+venv/
+dist/
+build/
 .env
 .DS_Store
+src/ai_tracker/
