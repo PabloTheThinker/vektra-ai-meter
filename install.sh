@@ -97,10 +97,8 @@ ok "Autostart: enabled on login"
 echo ""
 echo "Commands:"
 echo "  ai-meter run"
+echo "  ai-meter update"
 echo "  ai-meter snapshot --write --pretty"
-echo ""
-echo "Update:"
-echo "  curl -fsSL https://vektraindustries.com/ai-tracker/install | bash"
 echo ""
 
 if [[ "${VEKTRA_AI_METER_LAUNCH:-1}" == "1" ]]; then

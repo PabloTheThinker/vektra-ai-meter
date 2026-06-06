@@ -52,6 +52,12 @@ def cmd_print(_args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_update(args: argparse.Namespace) -> int:
+    from .update import run_update
+
+    return run_update(restart=not args.no_restart)
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description="Vektra AI Meter for Linux")
     sub = parser.add_subparsers(dest="command", required=True)
@@ -77,6 +83,14 @@ def main() -> int:
 
     show = sub.add_parser("print", help="Print cached snapshot JSON")
     show.set_defaults(func=cmd_print)
+
+    upd = sub.add_parser("update", help="Pull latest release and upgrade the install")
+    upd.add_argument(
+        "--no-restart",
+        action="store_true",
+        help="Skip restarting the panel indicator after update",
+    )
+    upd.set_defaults(func=cmd_update)
 
     args = parser.parse_args()
     return args.func(args)

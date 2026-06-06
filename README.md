@@ -30,10 +30,19 @@ Installs into `~/.local/share/vektra-ai-meter/venv`, puts `ai-meter` on your PAT
 ```bash
 ai-meter run
 ai-meter topbar
+ai-meter update
 ai-meter snapshot --write --pretty
 ai-meter print
 ai-meter config --autostart true
 ```
+
+### Update without reinstalling
+
+```bash
+ai-meter update
+```
+
+Pulls the latest code from GitHub, upgrades the venv, and restarts the panel indicator. Use `ai-meter update --no-restart` to skip the restart.
 
 ## Manual install (developers)
 
