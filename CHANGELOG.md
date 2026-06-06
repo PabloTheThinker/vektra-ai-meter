@@ -1,5 +1,17 @@
 # Changelog
 
+## [2026-06-06] — fix stuck unclickable panel (v0.3.10)
+
+### Fixed
+- Replaced dual layer-shell windows (fullscreen backdrop + panel) with a **single** fullscreen `Gtk.Overlay` window — backdrop was stacking above the panel and eating all clicks.
+- Hide/show now uses `set_opacity(0/1)` + `can_target` on one mapped surface (no `set_visible(False)` crash, actually disappears visually).
+
+### Verify
+```bash
+ai-meter update
+# ✕, ↻ refresh, and click-away should all work; tray reopens after dismiss
+```
+
 ## [2026-06-06] — popup server survives hide / click-away (v0.3.9)
 
 ### Fixed

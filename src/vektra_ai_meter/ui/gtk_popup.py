@@ -30,8 +30,6 @@ from .theme import (  # noqa: E402
     window_title,
 )
 
-_HIDDEN_CLASS = "vektra-layer-hidden"
-
 CSS = f"""
 window.vektra-popup {{
   background-color: transparent;
@@ -124,10 +122,10 @@ window.vektra-popup {{
   border: 1px solid {BORDER};
 }}
 .vektra-backdrop {{
-  background-color: rgba(0, 0, 0, 0.01);
+  background-color: rgba(0, 0, 0, 0.18);
 }}
-window.vektra-layer-hidden {{
-  opacity: 0;
+.vektra-panel {{
+  min-width: {PANEL_WIDTH}px;
 }}
 progressbar.vektra-bar progress {{
   background-color: #22c55e;
@@ -204,7 +202,6 @@ class IntegratedPopup:
     def __init__(self, application: Gtk.Application) -> None:
         self.app = application
         self.window: Gtk.Window | None = None
-        self.backdrop: Gtk.Window | None = None
         self.visible = False
         self.body_box: Gtk.Box | None = None
         self.pills_box: Gtk.Box | None = None
@@ -221,14 +218,13 @@ class IntegratedPopup:
     def _set_layer_open(self, open_: bool) -> None:
         if self.window is None:
             return
-        backdrop = self._ensure_backdrop()
-        for widget in (backdrop, self.window):
-            if open_:
-                widget.remove_css_class(_HIDDEN_CLASS)
-                widget.set_can_target(True)
-            else:
-                widget.add_css_class(_HIDDEN_CLASS)
-                widget.set_can_target(False)
+        if open_:
+            self.window.set_opacity(1.0)
+            self.window.set_can_target(True)
+            self.window.set_visible(True)
+        else:
+            self.window.set_opacity(0.0)
+            self.window.set_can_target(False)
 
     def build(self) -> Gtk.Window:
         provider = Gtk.CssProvider()
@@ -244,24 +240,44 @@ class IntegratedPopup:
         win.add_css_class("vektra-popup")
         win.set_decorated(False)
         win.set_resizable(False)
-        win.set_default_size(PANEL_WIDTH, 420)
 
         Gtk4LayerShell.init_for_window(win)
         Gtk4LayerShell.set_layer(win, Gtk4LayerShell.Layer.OVERLAY)
-        Gtk4LayerShell.set_anchor(win, Gtk4LayerShell.Edge.TOP, True)
-        Gtk4LayerShell.set_anchor(win, Gtk4LayerShell.Edge.RIGHT, True)
-        top_margin = int(os.environ.get("VEKTRA_TOP_BAR_HEIGHT", "36"))
-        Gtk4LayerShell.set_margin(win, Gtk4LayerShell.Edge.TOP, top_margin)
-        Gtk4LayerShell.set_margin(win, Gtk4LayerShell.Edge.RIGHT, 10)
+        for edge in (
+            Gtk4LayerShell.Edge.TOP,
+            Gtk4LayerShell.Edge.BOTTOM,
+            Gtk4LayerShell.Edge.LEFT,
+            Gtk4LayerShell.Edge.RIGHT,
+        ):
+            Gtk4LayerShell.set_anchor(win, edge, True)
         Gtk4LayerShell.set_keyboard_mode(win, Gtk4LayerShell.KeyboardMode.ON_DEMAND)
 
         key = Gtk.EventControllerKey()
         key.connect("key-pressed", self._on_key)
         win.add_controller(key)
 
+        top_margin = int(os.environ.get("VEKTRA_TOP_BAR_HEIGHT", "36"))
+        overlay = Gtk.Overlay()
+        win.set_child(overlay)
+
+        backdrop = Gtk.Box()
+        backdrop.add_css_class("vektra-backdrop")
+        backdrop.set_hexpand(True)
+        backdrop.set_vexpand(True)
+        backdrop_click = Gtk.GestureClick()
+        backdrop_click.connect("pressed", lambda *_: self.hide())
+        backdrop.add_controller(backdrop_click)
+        overlay.set_child(backdrop)
+
         root = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=0)
         root.add_css_class("vektra-root")
-        win.set_child(root)
+        root.add_css_class("vektra-panel")
+        root.set_halign(Gtk.Align.END)
+        root.set_valign(Gtk.Align.START)
+        root.set_margin_top(top_margin)
+        root.set_margin_end(10)
+        root.set_size_request(PANEL_WIDTH, 420)
+        overlay.add_overlay(root)
 
         header = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=8)
         header.add_css_class("vektra-header")
@@ -311,36 +327,8 @@ class IntegratedPopup:
         root.append(self.footer_label)
 
         self.window = win
-        self._ensure_backdrop()
         self._set_layer_open(False)
         return win
-
-    def _ensure_backdrop(self) -> Gtk.Window:
-        if self.backdrop is not None:
-            return self.backdrop
-
-        backdrop = Gtk.Window(application=self.app)
-        backdrop.add_css_class("vektra-backdrop")
-        backdrop.set_decorated(False)
-        backdrop.set_can_focus(False)
-
-        Gtk4LayerShell.init_for_window(backdrop)
-        Gtk4LayerShell.set_layer(backdrop, Gtk4LayerShell.Layer.OVERLAY)
-        for edge in (
-            Gtk4LayerShell.Edge.TOP,
-            Gtk4LayerShell.Edge.BOTTOM,
-            Gtk4LayerShell.Edge.LEFT,
-            Gtk4LayerShell.Edge.RIGHT,
-        ):
-            Gtk4LayerShell.set_anchor(backdrop, edge, True)
-        Gtk4LayerShell.set_keyboard_mode(backdrop, Gtk4LayerShell.KeyboardMode.NONE)
-
-        click = Gtk.GestureClick()
-        click.connect("pressed", lambda *_: self.hide())
-        backdrop.add_controller(click)
-
-        self.backdrop = backdrop
-        return backdrop
 
     def _divider(self) -> Gtk.Widget:
         box = Gtk.Box()
@@ -628,6 +616,8 @@ class IntegratedPopup:
 
         self.refresh(force=True)
         if self._is_open():
+            self._set_layer_open(True)
+            self.window.present()
             self._start_footer_timer()
             threading.Thread(target=self._collect_and_refresh, daemon=True).start()
             return
