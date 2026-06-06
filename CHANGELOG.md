@@ -1,5 +1,21 @@
 # Changelog
 
+## [2026-06-06] — tray-anchored dropdown on COSMIC/Wayland (v0.3.12)
+
+### Fixed
+- Panel opened on the wrong screen edge after the fullscreen `Gtk.Overlay` refactor — restored **CodexBar/codexbar-waybar** compact layer-shell window (TOP+RIGHT or TOP+LEFT under tray).
+- Qt tray geometry is sent over IPC on every open so the dropdown drops under your actual status-area icon (COSMIC, multi-monitor).
+- Separate fullscreen backdrop (dim) + compact panel surface — panel stays readable and above the dim layer.
+
+### Tuning
+- `VEKTRA_TOP_BAR_HEIGHT` (default `36`) — gap below top panel; raise to `40` on COSMIC if the panel clips under the bar.
+
+### Verify
+```bash
+ai-meter update
+# Click tray icon — panel should appear directly under the meter icon, top-right area
+```
+
 ## [2026-06-06] — clean update output + single version source (v0.3.11)
 
 ### Fixed

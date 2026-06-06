@@ -18,7 +18,7 @@ from .paths import venv_ai_meter
 from .snapshot import write_snapshot
 from .ui.icon import make_tray_icon
 from .ui.panel import UsagePanel
-from .ui.wayland import ClickAwayFilter, is_wayland
+from .ui.wayland import ClickAwayFilter, is_wayland, tray_anchor_rect
 from .util import snapshot_display_digest
 
 REFRESH_MS = 15_000
@@ -151,6 +151,22 @@ class TopBarIndicator:
         self.tray.setIcon(make_tray_icon())
         self.tray.show()
 
+    def _popup_show_geometry(self) -> tuple[tuple[int, int, int, int], tuple[int, int, int, int]]:
+        anchor = tray_anchor_rect(self.tray)
+        screen = QApplication.screenAt(anchor.center())
+        if screen is None:
+            screen = QApplication.primaryScreen()
+        if screen is None:
+            return (
+                (anchor.x(), anchor.y(), anchor.width(), anchor.height()),
+                (0, 0, 1920, 1080),
+            )
+        full = screen.geometry()
+        return (
+            (anchor.x(), anchor.y(), anchor.width(), anchor.height()),
+            (full.x(), full.y(), full.width(), full.height()),
+        )
+
     def _ensure_popup_server(self, *, force: bool = False) -> None:
         if not force and popup_server_running():
             return
@@ -193,10 +209,11 @@ class TopBarIndicator:
             if not popup_server_running():
                 self._ensure_popup_server()
             self._refresh()
-            if not show_popup():
+            tray_rect, screen_rect = self._popup_show_geometry()
+            if not show_popup(tray_rect=tray_rect, screen_rect=screen_rect):
                 self._ensure_popup_server(force=True)
                 time.sleep(0.15)
-                show_popup()
+                show_popup(tray_rect=tray_rect, screen_rect=screen_rect)
             return
 
         if self.panel is None:

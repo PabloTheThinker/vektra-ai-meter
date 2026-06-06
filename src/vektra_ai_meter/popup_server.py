@@ -32,14 +32,26 @@ def _socket_listener(app_popup, stop_event: threading.Event) -> None:
         except OSError:
             break
         try:
-            data = conn.recv(64).decode("utf-8", errors="ignore").strip().lower()
-            if data == "toggle":
+            data = conn.recv(128).decode("utf-8", errors="ignore").strip()
+            parts = data.split()
+            cmd = parts[0].lower() if parts else ""
+            if cmd == "toggle":
                 app_popup.schedule_toggle()
-            elif data == "show":
-                app_popup.schedule_show()
-            elif data == "hide":
+            elif cmd == "show":
+                tray_rect = None
+                screen_rect = None
+                if len(parts) >= 9:
+                    try:
+                        nums = [int(value) for value in parts[1:9]]
+                        tray_rect = (nums[0], nums[1], nums[2], nums[3])
+                        screen_rect = (nums[4], nums[5], nums[6], nums[7])
+                    except ValueError:
+                        tray_rect = None
+                        screen_rect = None
+                app_popup.schedule_show(tray_rect, screen_rect)
+            elif cmd == "hide":
                 app_popup.schedule_hide()
-            elif data == "refresh":
+            elif cmd == "refresh":
                 app_popup.schedule_refresh()
         finally:
             conn.close()
@@ -76,8 +88,20 @@ def run_popup_server() -> int:
         def schedule_toggle(self) -> None:
             GLib.idle_add(self._toggle)
 
-        def schedule_show(self) -> None:
-            GLib.idle_add(self.popup.show)
+        def schedule_show(
+            self,
+            tray_rect: tuple[int, int, int, int] | None = None,
+            screen_rect: tuple[int, int, int, int] | None = None,
+        ) -> None:
+            GLib.idle_add(self._show, tray_rect, screen_rect)
+
+        def _show(
+            self,
+            tray_rect: tuple[int, int, int, int] | None,
+            screen_rect: tuple[int, int, int, int] | None,
+        ) -> bool:
+            self.popup.show(tray_rect=tray_rect, screen_rect=screen_rect)
+            return False
 
         def schedule_hide(self) -> None:
             GLib.idle_add(self.popup.hide)

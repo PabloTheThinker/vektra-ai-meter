@@ -70,7 +70,15 @@ def toggle_popup() -> bool:
     return send_command("toggle")
 
 
-def show_popup() -> bool:
+def show_popup(
+    *,
+    tray_rect: tuple[int, int, int, int] | None = None,
+    screen_rect: tuple[int, int, int, int] | None = None,
+) -> bool:
+    if tray_rect is not None and screen_rect is not None:
+        tx, ty, tw, th = tray_rect
+        sx, sy, sw, sh = screen_rect
+        return send_command(f"show {tx} {ty} {tw} {th} {sx} {sy} {sw} {sh}")
     return send_command("show")
 
 
