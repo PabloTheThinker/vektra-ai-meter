@@ -19,6 +19,7 @@ class ProviderView:
     sessions: int
     active_sessions: int
     total_tokens: int
+    total_tokens_fmt: str
     today_tokens: int
     model: str | None
     subtitle: str | None
@@ -26,6 +27,7 @@ class ProviderView:
     rate_secondary: str | None = None
     limits: list[dict[str, Any]] = field(default_factory=list)
     limit_headline: str | None = None
+    plan_type: str | None = None
 
 
 def _primary_secondary(limits: list) -> tuple[str | None, str | None]:
@@ -58,6 +60,7 @@ def _provider_view(
             sessions=grok.sessions,
             active_sessions=grok.active_sessions,
             total_tokens=grok.estimated_tokens,
+            total_tokens_fmt=fmt_tokens(grok.estimated_tokens),
             today_tokens=grok.today_messages,
             model=grok.latest_model,
             subtitle=grok.latest_title or (grok.latest_cwd and grok.latest_cwd.split("/")[-1]),
@@ -79,6 +82,7 @@ def _provider_view(
             sessions=codex.sessions,
             active_sessions=codex.active_sessions,
             total_tokens=codex.total_tokens,
+            total_tokens_fmt=fmt_tokens(codex.total_tokens),
             today_tokens=codex.today_tokens,
             model=codex.latest_model,
             subtitle=codex.latest_title or (codex.latest_cwd and codex.latest_cwd.split("/")[-1]),
@@ -86,6 +90,7 @@ def _provider_view(
             rate_secondary=secondary,
             limits=limits_to_dicts(limits),
             limit_headline=headline_limit(limits),
+            plan_type=codex.plan_type,
         )
     limits = getattr(claude, "limits", [])
     primary, secondary = _primary_secondary(limits)
@@ -95,6 +100,7 @@ def _provider_view(
         sessions=claude.sessions,
         active_sessions=claude.active_sessions,
         total_tokens=claude.total_tokens,
+        total_tokens_fmt=fmt_tokens(claude.total_tokens),
         today_tokens=claude.today_tokens,
         model=claude.latest_model,
         subtitle=claude.latest_title or (claude.latest_cwd and claude.latest_cwd.split("/")[-1]),

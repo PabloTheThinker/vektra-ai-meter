@@ -73,18 +73,8 @@ exec "${VENV_DIR}/bin/ai-meter" "\$@"
 EOF
 chmod 755 "$BIN_DIR/ai-meter"
 
-cat >"$AUTOSTART_DIR/vektra-ai-meter.desktop" <<EOF
-[Desktop Entry]
-Type=Application
-Name=Vektra AI Meter
-Comment=Top-bar AI usage meter
-Exec=${BIN_DIR}/ai-meter run
-Icon=utilities-system-monitor
-Terminal=false
-Hidden=false
-X-GNOME-Autostart-enabled=true
-X-GNOME-Autostart-Delay=3
-EOF
+log "Configuring autostart (desktop + systemd)..."
+"$VENV_DIR/bin/ai-meter" config >/dev/null 2>&1 || true
 
 rm -f "$AUTOSTART_DIR/ai-usage-tracker.desktop" 2>/dev/null || true
 
@@ -93,12 +83,14 @@ echo -e "${BOLD}Vektra AI Meter installed${NC}"
 echo ""
 ok "CLI:       $BIN_DIR/ai-meter"
 ok "Package:   vektra-ai-meter $( "$VENV_DIR/bin/python" -c "import importlib.metadata as m; print(m.version('vektra-ai-meter'))" 2>/dev/null || echo '0.2.0' )"
-ok "Autostart: enabled on login"
+ok "Autostart: enabled on login (desktop + systemd user service)"
 echo ""
 echo "Commands:"
-echo "  ai-meter run"
+echo "  ai-meter status"
 echo "  ai-meter update"
 echo "  ai-meter snapshot --write --pretty"
+echo ""
+echo "The meter starts automatically on login — no need to run ai-meter run manually."
 echo ""
 
 if [[ "${VEKTRA_AI_METER_LAUNCH:-1}" == "1" ]]; then

@@ -31,16 +31,28 @@ def cmd_run(_args: argparse.Namespace) -> int:
 
 
 def cmd_config(args: argparse.Namespace) -> int:
+    from .autostart import sync_autostart
+
     config = Config().load()
     if args.autostart is not None:
-        config.autostart = args.autostart == "true"
-    config.save()
+        enabled = args.autostart == "true"
+        sync_autostart(enabled=enabled)
+    else:
+        sync_autostart()
+    config = Config().load()
     print(
         json.dumps(
             {"autostart": config.autostart, "path": str(config.path)},
             indent=2,
         )
     )
+    return 0
+
+
+def cmd_status(_args: argparse.Namespace) -> int:
+    from .autostart import status_dict
+
+    print(json.dumps(status_dict(), indent=2))
     return 0
 
 
@@ -80,6 +92,9 @@ def main() -> int:
     cfg = sub.add_parser("config", help="View or update settings")
     cfg.add_argument("--autostart", choices=["true", "false"])
     cfg.set_defaults(func=cmd_config)
+
+    status = sub.add_parser("status", help="Show panel process and autostart state")
+    status.set_defaults(func=cmd_status)
 
     show = sub.add_parser("print", help="Print cached snapshot JSON")
     show.set_defaults(func=cmd_print)

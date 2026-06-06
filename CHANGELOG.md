@@ -1,5 +1,30 @@
 # Changelog
 
+## [2026-06-06] — Linux top-bar parity: autostart, limits UX, Wayland panel
+
+### Added
+- `ai-meter status` — shows running pid, autostart, desktop entry, and systemd user service state.
+- Systemd user service (`vektra-ai-meter.service`) alongside XDG autostart for reliable login startup.
+- Single-instance lock so autostart and manual `ai-meter run` never spawn duplicates.
+- CodexBar-style rich tray tooltip with per-provider quota lines (5h, 7d, Context %).
+- Panel shows remaining %, token counts (e.g. `154.7K / 200K`), plan type, and reset countdowns.
+
+### Fixed
+- Wayland/COSMIC panel: removed tray anchor transient window (source of grabbing-popup errors).
+- Click-away close via global event filter instead of `WindowDeactivate` / `Qt.Popup`.
+
+### Changed
+- `ai-meter config` syncs desktop + systemd autostart entries.
+- Install script configures autostart automatically — no manual `ai-meter run` after login.
+
+### Verify
+```bash
+ai-meter update
+ai-meter status
+ai-meter snapshot --write --pretty
+# Click tray icon in top-bar status area
+```
+
 ## [2026-06-06] — Wayland panel fix (no grabbing popup)
 
 ### Fixed

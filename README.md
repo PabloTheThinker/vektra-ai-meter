@@ -24,18 +24,20 @@ Installs into `~/.local/share/vektra-ai-meter/venv`, puts `ai-meter` on your PAT
 - **Live quota percentages** — Codex 5h/7d limits, Grok context window (refreshes every 15s)
 - **CodexBar-style panel** — click the tray icon for progress bars, reset hints, and per-provider breakdown
 - **Dynamic tray meter** — mini bar icon shows usage at a glance (works on Wayland without theme icons)
-- **Autostart** on login
+- **Autostart** on login (XDG desktop entry + systemd user service)
 - **Local snapshot** at `~/.local/share/vektra-ai-meter/snapshot.json`
+
+After install, the meter starts automatically — you do not need to run `ai-meter run` manually.
 
 ## Commands
 
 ```bash
-ai-meter run
-ai-meter topbar
+ai-meter status
 ai-meter update
 ai-meter snapshot --write --pretty
 ai-meter print
 ai-meter config --autostart true
+ai-meter run          # only if autostart is off or you need to restart manually
 ```
 
 ### Update without reinstalling

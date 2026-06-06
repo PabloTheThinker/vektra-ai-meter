@@ -12,6 +12,10 @@ class UsageLimit:
     remaining_percent: float | None = None
     resets_at: datetime | None = None
     detail: str | None = None
+    used_tokens: int | None = None
+    limit_tokens: int | None = None
+    used_tokens_fmt: str | None = None
+    limit_tokens_fmt: str | None = None
 
     def to_dict(self) -> dict[str, Any]:
         data = asdict(self)
@@ -61,6 +65,14 @@ def limit_from_window(
     )
 
 
+def _token_pair(used: int | None, limit: int | None) -> tuple[str | None, str | None]:
+    from .util import fmt_tokens
+
+    if used is None or limit is None:
+        return None, None
+    return fmt_tokens(used), fmt_tokens(limit)
+
+
 def context_limit(
     *,
     label: str,
@@ -71,11 +83,16 @@ def context_limit(
         return None
     used_percent = min(100.0, (used_tokens / window_tokens) * 100.0)
     remaining = max(0.0, 100.0 - used_percent)
+    used_fmt, limit_fmt = _token_pair(used_tokens, window_tokens)
     return UsageLimit(
         label=label,
         used_percent=round(used_percent, 1),
         remaining_percent=round(remaining, 1),
         detail=f"{used_percent:.0f}% of window",
+        used_tokens=used_tokens,
+        limit_tokens=window_tokens,
+        used_tokens_fmt=used_fmt,
+        limit_tokens_fmt=limit_fmt,
     )
 
 
