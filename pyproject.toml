@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "vektra-ai-meter"
-version = "0.3.10"
+version = "0.3.11"
 description = "Top-bar AI usage meter for Grok Build, Codex, and Claude Code on Linux"
 readme = "README.md"
 requires-python = ">=3.10"

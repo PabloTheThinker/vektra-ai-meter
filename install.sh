@@ -183,9 +183,18 @@ print_integration_status() {
   fi
 }
 
+BEFORE_VERSION=""
+if [[ -x "$VENV_DIR/bin/python" ]]; then
+  BEFORE_VERSION="$("$VENV_DIR/bin/python" -c "import importlib.metadata as m; print(m.version('vektra-ai-meter'))" 2>/dev/null || true)"
+fi
+
 echo ""
-echo -e "${MAGENTA}${BOLD}Vektra AI Meter${NC}"
-echo -e "${CYAN}One command — tray icon + integrated top-bar dropdown${NC}"
+if [[ "${VEKTRA_AI_METER_UPDATE:-0}" == "1" ]]; then
+  echo -e "${MAGENTA}${BOLD}Vektra AI Meter${NC} — updating"
+else
+  echo -e "${MAGENTA}${BOLD}Vektra AI Meter${NC}"
+  echo -e "${CYAN}One command — tray icon + integrated top-bar dropdown${NC}"
+fi
 echo ""
 
 ensure_prerequisites
@@ -239,32 +248,50 @@ log "Configuring autostart (desktop + systemd)..."
 
 rm -f "$AUTOSTART_DIR/ai-usage-tracker.desktop" 2>/dev/null || true
 
+AFTER_VERSION="$( "$VENV_DIR/bin/python" -c "import importlib.metadata as m; print(m.version('vektra-ai-meter'))" 2>/dev/null || echo 'unknown' )"
+
 echo ""
-echo -e "${BOLD}Vektra AI Meter installed${NC}"
+if [[ "${VEKTRA_AI_METER_UPDATE:-0}" == "1" ]]; then
+  echo -e "${BOLD}Vektra AI Meter updated${NC}"
+else
+  echo -e "${BOLD}Vektra AI Meter installed${NC}"
+fi
 echo ""
 ok "CLI:       $BIN_DIR/ai-meter"
-ok "Package:   vektra-ai-meter $( "$VENV_DIR/bin/python" -c "import importlib.metadata as m; print(m.version('vektra-ai-meter'))" 2>/dev/null || echo '0.3.0' )"
+if [[ -n "$BEFORE_VERSION" && "$BEFORE_VERSION" == "$AFTER_VERSION" ]]; then
+  ok "Package:   vektra-ai-meter $AFTER_VERSION (already up to date)"
+elif [[ -n "$BEFORE_VERSION" ]]; then
+  ok "Package:   vektra-ai-meter $BEFORE_VERSION → $AFTER_VERSION"
+else
+  ok "Package:   vektra-ai-meter $AFTER_VERSION"
+fi
 ok "Autostart: enabled on login (desktop + systemd user service)"
 print_integration_status
 echo ""
-echo "Commands:"
-echo "  ai-meter status"
-echo "  ai-meter reboot"
-echo "  ai-meter update"
-echo "  ai-meter snapshot --write --pretty"
-echo ""
-echo "The meter starts automatically on login — no extra setup steps."
-echo ""
+if [[ "${VEKTRA_AI_METER_UPDATE:-0}" != "1" ]]; then
+  echo "Commands:"
+  echo "  ai-meter status"
+  echo "  ai-meter reboot"
+  echo "  ai-meter update"
+  echo "  ai-meter snapshot --write --pretty"
+  echo ""
+  echo "The meter starts automatically on login — no extra setup steps."
+  echo ""
+fi
 
 if [[ "${VEKTRA_AI_METER_LAUNCH:-1}" == "1" ]]; then
   pkill -f "${VENV_DIR}/bin/ai-meter" 2>/dev/null || true
   pkill -f "ai-meter popup-server" 2>/dev/null || true
   pkill -f "vektra_ai_meter.popup_server" 2>/dev/null || true
-  log "Starting panel indicator..."
+  if [[ "${VEKTRA_AI_METER_UPDATE:-0}" == "1" ]]; then
+    log "Restarting panel indicator..."
+  else
+    log "Starting panel indicator..."
+  fi
   if "$BIN_DIR/ai-meter" reboot >/dev/null 2>&1; then
-    ok "Look in your top-bar status area"
+    ok "Panel indicator running — look in your top-bar status area"
   else
     nohup "$BIN_DIR/ai-meter" run >/dev/null 2>&1 &
-    ok "Look in your top-bar status area"
+    ok "Panel indicator running — look in your top-bar status area"
   fi
 fi

@@ -1,12 +1,12 @@
 from __future__ import annotations
 
 import importlib.metadata
+import os
 import subprocess
 import sys
 from pathlib import Path
 from shutil import which
 
-from . import __version__
 from .paths import (
     app_dir,
     default_branch,
@@ -63,36 +63,7 @@ def _launcher() -> Path:
     return ai_meter_bin()
 
 
-def _ensure_integration() -> None:
-    from .ui.wayland import is_wayland
-
-    if not is_wayland():
-        return
-
-    launcher = _launcher()
-    if not launcher.is_file():
-        return
-
-    # Run via the freshly installed CLI so post-pip integrate logic is current.
-    result = subprocess.run(
-        [str(launcher), "integrate", "--build"],
-        check=False,
-        stdout=subprocess.DEVNULL,
-        stderr=subprocess.PIPE,
-        text=True,
-    )
-    if result.returncode != 0:
-        detail = (result.stderr or "").strip()
-        print(
-            "Warning: integrated dropdown build skipped — Qt panel fallback remains active.",
-            file=sys.stderr,
-        )
-        if detail:
-            print(detail, file=sys.stderr)
-
-
 def _restart_topbar() -> bool:
-    """Restart using the newly installed ai-meter (not in-process stale modules)."""
     launcher = _launcher()
     if not launcher.is_file():
         print(
@@ -105,44 +76,65 @@ def _restart_topbar() -> bool:
     return result.returncode == 0
 
 
-def run_update(*, restart: bool = True) -> int:
+def _run_install_script(*, restart: bool) -> int:
+    install_sh = app_dir() / "install.sh"
+    if not install_sh.is_file():
+        return -1
+
+    env = os.environ.copy()
+    env["VEKTRA_AI_METER_UPDATE"] = "1"
+    env["VEKTRA_AI_METER_LAUNCH"] = "1" if restart else "0"
+    result = subprocess.run(["bash", str(install_sh)], env=env, check=False)
+    return result.returncode
+
+
+def _run_python_update(*, restart: bool) -> int:
     pip = venv_pip()
     app = app_dir()
-
-    if not venv_dir().is_dir() or not pip.is_file():
-        print(
-            "Vektra AI Meter venv not found. Install first:\n"
-            "  curl -fsSL https://vektraindustries.com/ai-tracker/install | bash",
-            file=sys.stderr,
-        )
-        return 1
-
     before = _installed_version()
-    print(f"Current version: {before}")
 
     try:
         branch = default_branch()
         if (app / ".git").is_dir():
-            print(f"Pulling latest from {default_repo_url()} ({branch})...")
+            print(f"→ Pulling latest from {default_repo_url()} ({branch})...")
             _git_sync(app, branch)
-        else:
-            print("No git checkout found — upgrading package from GitHub...")
-        print("Upgrading Python package...")
+        print("→ Upgrading Python package...")
         _pip_upgrade(app, pip)
-        print("Ensuring integrated top-bar dropdown...")
-        _ensure_integration()
     except UpdateError as exc:
         print(f"Update failed: {exc}", file=sys.stderr)
         return 1
 
     after = _installed_version()
-    print(f"Updated: {before} → {after} (package declares {__version__})")
+    if before == after:
+        print(f"✓ Already up to date — vektra-ai-meter {after}")
+    else:
+        print(f"✓ Updated vektra-ai-meter {before} → {after}")
 
     if restart:
-        print("Restarting panel indicator...")
+        print("→ Restarting panel indicator...")
         if _restart_topbar():
+            print("✓ Panel indicator running")
             return 0
         print("Update installed but auto-restart failed. Run: ai-meter reboot", file=sys.stderr)
         return 1
 
     return 0
+
+
+def run_update(*, restart: bool = True) -> int:
+    if not venv_dir().is_dir() or not venv_pip().is_file():
+        print(
+            "Vektra AI Meter is not installed. Run:\n"
+            "  curl -fsSL https://vektraindustries.com/ai-tracker/install | bash",
+            file=sys.stderr,
+        )
+        return 1
+
+    code = _run_install_script(restart=restart)
+    if code >= 0:
+        return code
+
+    print("")
+    print("Vektra AI Meter — updating")
+    print("")
+    return _run_python_update(restart=restart)

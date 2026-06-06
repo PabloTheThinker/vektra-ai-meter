@@ -1,5 +1,19 @@
 # Changelog
 
+## [2026-06-06] — clean update output + single version source (v0.3.11)
+
+### Fixed
+- `ai-meter update` now runs the same `install.sh` as the curl installer — matching ✓/→ output, no confusing `(package declares 0.3.6)` line.
+- Version comes from one place: `pyproject.toml` → pip metadata (`importlib.metadata`); stale hardcoded `__version__` removed.
+- Update shows `already up to date` when the package version did not change.
+
+### Verify
+```bash
+ai-meter update
+# Should end with: Package: vektra-ai-meter 0.3.11 (already up to date)
+ai-meter status   # version field matches
+```
+
 ## [2026-06-06] — fix stuck unclickable panel (v0.3.10)
 
 ### Fixed
